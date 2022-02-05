@@ -32,6 +32,7 @@ ShownMenuType shownMenu;
 
 char optionDescription[512];
 
+Rectangle rectList;
 Rectangle rectDescription;
 
 enum class SpecialMenuEntry {
@@ -56,6 +57,12 @@ std::vector<DrawStringFormatArg> CreateDrawStringFormatArgForEntry(OptionEntryBa
 		{ pEntry->GetName().data(), UiFlags::ColorUiGold },
 		{ pEntry->GetValueDescription().data(), UiFlags::ColorUiSilver }
 	};
+}
+
+/** @brief Check if the option text can't fit in one list line (list width minus drawn selector) */
+bool NeedsTwoLinesToDisplayOption(std::vector<DrawStringFormatArg> &formatArgs)
+{
+	return GetLineWidth("{}: {}", formatArgs.data(), formatArgs.size(), GameFontTables::GameFont24, 1) >= (rectList.size.width - 90);
 }
 
 void CleanUpSettingsUI()
@@ -177,9 +184,19 @@ void ItemSelected(int value)
 			updateValueDescription = ChangeOptionValue(pOption, 0);
 		}
 		if (updateValueDescription) {
-			vecItem->args.clear();
-			for (auto &arg : CreateDrawStringFormatArgForEntry(pOption))
-				vecItem->args.push_back(arg);
+			auto args = CreateDrawStringFormatArgForEntry(pOption);
+			bool optionUsesTwoLines = ((value + 1) < vecDialogItems.size() && vecDialogItems[value]->m_value == vecDialogItems[value + 1]->m_value);
+			if (NeedsTwoLinesToDisplayOption(args) != optionUsesTwoLines) {
+				selectedOption = pOption;
+				endMenu = true;
+			} else {
+				vecItem->args.clear();
+				for (auto &arg : args)
+					vecItem->args.push_back(arg);
+				if (optionUsesTwoLines) {
+					vecDialogItems[value + 1]->m_text = pOption->GetValueDescription().data();
+				}
+			}
 		}
 	} break;
 	case ShownMenuType::ListOption: {
@@ -230,7 +247,7 @@ void UiSettingsMenu()
 		UiAddBackground(&vecDialog);
 		UiAddLogo(&vecDialog);
 
-		Rectangle rectList = { { PANEL_LEFT + 50, (UI_OFFSET_Y + 204) }, { 540, 208 } };
+		rectList = { { PANEL_LEFT + 50, (UI_OFFSET_Y + 204) }, { 540, 208 } };
 		rectDescription = { { PANEL_LEFT + 24, rectList.position.y + rectList.size.height + 16 }, { 590, 35 } };
 
 		optionDescription[0] = '\0';
@@ -258,10 +275,15 @@ void UiSettingsMenu()
 						vecDialogItems.push_back(std::make_unique<UiListItem>(pCategory->GetName().data(), static_cast<int>(SpecialMenuEntry::None), UiFlags::ColorWhitegold | UiFlags::ElementDisabled));
 						categoryCreated = true;
 					}
-					auto formatArgs = CreateDrawStringFormatArgForEntry(pEntry);
 					if (selectedOption == pEntry)
 						itemToSelect = vecDialogItems.size();
-					vecDialogItems.push_back(std::make_unique<UiListItem>("{}: {}", formatArgs, vecOptions.size(), UiFlags::ColorUiGold));
+					auto formatArgs = CreateDrawStringFormatArgForEntry(pEntry);
+					if (NeedsTwoLinesToDisplayOption(formatArgs)) {
+						vecDialogItems.push_back(std::make_unique<UiListItem>("{}:", formatArgs, vecOptions.size(), UiFlags::ColorUiGold | UiFlags::NeedsNextElement));
+						vecDialogItems.push_back(std::make_unique<UiListItem>(pEntry->GetValueDescription().data(), vecOptions.size(), UiFlags::ColorUiSilver | UiFlags::ElementDisabled));
+					} else {
+						vecDialogItems.push_back(std::make_unique<UiListItem>("{}: {}", formatArgs, vecOptions.size(), UiFlags::ColorUiGold));
+					}
 					vecOptions.push_back(pEntry);
 				}
 			}
@@ -282,9 +304,25 @@ void UiSettingsMenu()
 			eventHandler = [](SDL_Event &event) {
 				if (SelectedItem != IndexKeyInput)
 					return false;
-				if (event.type != SDL_KEYDOWN)
-					return false;
-				int key = TranslateSdlKey(event.key.keysym);
+				int key = DVL_VK_INVALID;
+				switch (event.type) {
+				case SDL_KEYDOWN:
+					key = TranslateSdlKey(event.key.keysym);
+					break;
+				case SDL_MOUSEBUTTONDOWN:
+					switch (event.button.button) {
+					case SDL_BUTTON_MIDDLE:
+						key = DVL_VK_MBUTTON;
+						break;
+					case SDL_BUTTON_X1:
+						key = DVL_VK_X1BUTTON;
+						break;
+					case SDL_BUTTON_X2:
+						key = DVL_VK_X2BUTTON;
+						break;
+					}
+					break;
+				}
 				// Ignore unknown keys
 				if (key == DVL_VK_INVALID || key == -1)
 					return false;
@@ -316,6 +354,8 @@ void UiSettingsMenu()
 
 		CleanUpSettingsUI();
 	} while (!backToMain);
+
+	SaveOptions();
 }
 
 } // namespace devilution

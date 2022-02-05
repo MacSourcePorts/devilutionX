@@ -266,6 +266,8 @@ bool SVidPlayBegin(const char *filename, int flags)
 		    std::make_unique<Aulib::ResamplerSpeex>(*sgOptions.Audio.resamplingQuality), /*closeRw=*/false);
 		const float volume = static_cast<float>(sgOptions.Audio.nSoundVolume - VOLUME_MIN) / -VOLUME_MIN;
 		SVidAudioStream->setVolume(volume);
+		if (!diablo_is_focused())
+			SVidMute();
 		if (!SVidAudioStream->open()) {
 			LogError(LogCategory::Audio, "Aulib::Stream::open (from SVidPlayBegin): {}", SDL_GetError());
 			SVidAudioStream = std::nullopt;
@@ -390,6 +392,22 @@ void SVidPlayEnd()
 		SetVideoModeToPrimary(IsFullScreen(), gnScreenWidth, gnScreenHeight);
 		IsSVidVideoMode = false;
 	}
+#endif
+}
+
+void SVidMute()
+{
+#ifndef NOSOUND
+	if (SVidAudioStream)
+		SVidAudioStream->mute();
+#endif
+}
+
+void SVidUnmute()
+{
+#ifndef NOSOUND
+	if (SVidAudioStream)
+		SVidAudioStream->unmute();
 #endif
 }
 

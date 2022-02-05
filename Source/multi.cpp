@@ -320,7 +320,7 @@ void SendPlayerInfo(int pnum, _cmd_id cmd)
 	static_assert(alignof(PlayerPack) == 1, "Fix pkplr alignment");
 	std::unique_ptr<byte[]> pkplr { new byte[sizeof(PlayerPack)] };
 
-	PackPlayer(reinterpret_cast<PlayerPack *>(pkplr.get()), Players[MyPlayerId], true);
+	PackPlayer(reinterpret_cast<PlayerPack *>(pkplr.get()), Players[MyPlayerId], true, true);
 	dthread_send_delta(pnum, cmd, std::move(pkplr), sizeof(PlayerPack));
 }
 
@@ -464,6 +464,21 @@ bool InitMulti(GameData *gameData)
 
 } // namespace
 
+void InitGameInfo()
+{
+	sgGameInitInfo.size = sizeof(sgGameInitInfo);
+	sgGameInitInfo.dwSeed = time(nullptr);
+	sgGameInitInfo.programid = GAME_ID;
+	sgGameInitInfo.versionMajor = PROJECT_VERSION_MAJOR;
+	sgGameInitInfo.versionMinor = PROJECT_VERSION_MINOR;
+	sgGameInitInfo.versionPatch = PROJECT_VERSION_PATCH;
+	sgGameInitInfo.nTickRate = sgOptions.Gameplay.nTickRate;
+	sgGameInitInfo.bRunInTown = *sgOptions.Gameplay.runInTown ? 1 : 0;
+	sgGameInitInfo.bTheoQuest = *sgOptions.Gameplay.theoQuest ? 1 : 0;
+	sgGameInitInfo.bCowQuest = *sgOptions.Gameplay.cowQuest ? 1 : 0;
+	sgGameInitInfo.bFriendlyFire = *sgOptions.Gameplay.friendlyFire ? 1 : 0;
+}
+
 void NetSendLoPri(int playerId, const byte *data, size_t size)
 {
 	if (data != nullptr && size != 0) {
@@ -591,7 +606,8 @@ void multi_process_network_packets()
 		if (pkt->wLen != dwMsgSize)
 			continue;
 		auto &player = Players[dwID];
-		player.position.last = { pkt->px, pkt->py };
+		Point syncPosition = { pkt->px, pkt->py };
+		player.position.last = syncPosition;
 		if (dwID != MyPlayerId) {
 			assert(gbBufferMsgs != 2);
 			player._pHitPoints = pkt->php;
@@ -608,8 +624,10 @@ void multi_process_network_packets()
 						FixPlrWalkTags(dwID);
 						player.position.old = player.position.tile;
 						FixPlrWalkTags(dwID);
-						player.position.tile = { pkt->px, pkt->py };
-						player.position.future = { pkt->px, pkt->py };
+						player.position.tile = syncPosition;
+						player.position.future = syncPosition;
+						if (player.IsWalking())
+							player.position.temp = syncPosition;
 						dPlayer[player.position.tile.x][player.position.tile.y] = dwID + 1;
 					}
 					dx = abs(player.position.future.x - player.position.tile.x);
@@ -619,8 +637,8 @@ void multi_process_network_packets()
 					}
 					MakePlrPath(player, { pkt->targx, pkt->targy }, true);
 				} else {
-					player.position.tile = { pkt->px, pkt->py };
-					player.position.future = { pkt->px, pkt->py };
+					player.position.tile = syncPosition;
+					player.position.future = syncPosition;
 				}
 			}
 		}
@@ -684,17 +702,7 @@ bool NetInit(bool bSinglePlayer)
 {
 	while (true) {
 		SetRndSeed(0);
-		sgGameInitInfo.size = sizeof(sgGameInitInfo);
-		sgGameInitInfo.dwSeed = time(nullptr);
-		sgGameInitInfo.programid = GAME_ID;
-		sgGameInitInfo.versionMajor = PROJECT_VERSION_MAJOR;
-		sgGameInitInfo.versionMinor = PROJECT_VERSION_MINOR;
-		sgGameInitInfo.versionPatch = PROJECT_VERSION_PATCH;
-		sgGameInitInfo.nTickRate = sgOptions.Gameplay.nTickRate;
-		sgGameInitInfo.bRunInTown = *sgOptions.Gameplay.runInTown ? 1 : 0;
-		sgGameInitInfo.bTheoQuest = *sgOptions.Gameplay.theoQuest ? 1 : 0;
-		sgGameInitInfo.bCowQuest = *sgOptions.Gameplay.cowQuest ? 1 : 0;
-		sgGameInitInfo.bFriendlyFire = *sgOptions.Gameplay.friendlyFire ? 1 : 0;
+		InitGameInfo();
 		memset(sgbPlayerTurnBitTbl, 0, sizeof(sgbPlayerTurnBitTbl));
 		gbGameDestroyed = false;
 		memset(sgbPlayerLeftGameTbl, 0, sizeof(sgbPlayerLeftGameTbl));
@@ -818,7 +826,7 @@ void recv_plrinfo(int pnum, const TCmdPlrInfoHdr &header, bool recv)
 		return;
 	}
 
-	player._pgfxnum = 0;
+	player._pgfxnum &= ~0xF;
 	player._pmode = PM_DEATH;
 	NewPlrAnim(player, player_graphic::Death, Direction::South, player._pDFrames, 1);
 	player.AnimInfo.CurrentFrame = player.AnimInfo.NumberOfFrames - 1;

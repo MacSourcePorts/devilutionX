@@ -176,9 +176,7 @@ void UpdateMissilesRendererData()
 {
 	MissilesAtRenderingTile.clear();
 
-	for (int i = 0; i < ActiveMissileCount; i++) {
-		assert(ActiveMissiles[i] < MAXMISSILES);
-		Missile &m = Missiles[ActiveMissiles[i]];
+	for (auto &m : Missiles) {
 		UpdateMissileRendererData(m);
 		MissilesAtRenderingTile.insert(std::make_pair(m.position.tileForRendering, &m));
 	}
@@ -312,8 +310,7 @@ void DrawMissilePrivate(const Surface &out, const Missile &missile, Point target
 		return;
 	}
 	int nCel = missile._miAnimFrame;
-	const auto *frameTable = reinterpret_cast<const uint32_t *>(missile._miAnimData);
-	int frames = SDL_SwapLE32(frameTable[0]);
+	const int frames = LoadLE32(missile._miAnimData);
 	if (nCel < 1 || frames > 50 || nCel > frames) {
 		Log("Draw Missile 2: frame {} of {}, missile type=={}", nCel, frames, missile._mitype);
 		return;
@@ -427,7 +424,7 @@ void DrawMonster(const Surface &out, Point tilePosition, Point targetBufferPosit
 		    "Draw Monster \"{}\" {}: facing {}, frame {} of {}",
 		    monster.mName,
 		    getMonsterModeDisplayName(monster._mmode),
-		    monster._mdir,
+		    DirectionToString(monster._mdir),
 		    nCel,
 		    frames);
 		return;
@@ -460,7 +457,7 @@ void DrawPlayerIconHelper(const Surface &out, int pnum, missile_graphic_id missi
 	position.x += CalculateWidth2(Players[pnum].AnimInfo.pCelSprite->Width()) - MissileSpriteData[missileGraphicId].animWidth2;
 
 	int width = MissileSpriteData[missileGraphicId].animWidth;
-	byte *pCelBuff = MissileSpriteData[missileGraphicId].animData[0].get();
+	const byte *pCelBuff = MissileSpriteData[missileGraphicId].GetFirstFrame();
 
 	CelSprite cel { pCelBuff, width };
 
@@ -514,10 +511,17 @@ void DrawPlayer(const Surface &out, int pnum, Point tilePosition, Point targetBu
 	const auto *pCelSprite = player.AnimInfo.pCelSprite;
 	int nCel = player.AnimInfo.GetFrameToUseForRendering();
 
+	if (player.pPreviewCelSprite != nullptr) {
+		pCelSprite = player.pPreviewCelSprite;
+		nCel = 1;
+	}
+
 	if (pCelSprite == nullptr) {
 		Log("Drawing player {} \"{}\": NULL CelSprite", pnum, player._pName);
 		return;
 	}
+
+	targetBufferPosition -= { CalculateWidth2(pCelSprite == nullptr ? 96 : pCelSprite->Width()), 0 };
 
 	int frames = SDL_SwapLE32(*reinterpret_cast<const DWORD *>(pCelSprite->Data()));
 	if (nCel < 1 || frames > 50 || nCel > frames) {
@@ -529,7 +533,7 @@ void DrawPlayer(const Surface &out, int pnum, Point tilePosition, Point targetBu
 		    pnum,
 		    player._pName,
 		    szMode,
-		    player._pdir,
+		    DirectionToString(player._pdir),
 		    nCel,
 		    frames);
 		return;
@@ -717,7 +721,7 @@ void DrawItem(const Surface &out, Point tilePosition, Point targetBufferPosition
 	int nCel = item.AnimInfo.GetFrameToUseForRendering();
 	int frames = SDL_SwapLE32(*(DWORD *)cel->Data());
 	if (nCel < 1 || frames > 50 || nCel > frames) {
-		Log("Draw \"{}\" Item 1: frame {} of {}, item type=={}", item._iIName, nCel, frames, item._itype);
+		Log("Draw \"{}\" Item 1: frame {} of {}, item type=={}", item._iIName, nCel, frames, ItemTypeToString(item._itype));
 		return;
 	}
 
@@ -806,8 +810,7 @@ void DrawPlayerHelper(const Surface &out, Point tilePosition, Point targetBuffer
 		offset = GetOffsetForWalking(player.AnimInfo, player._pdir);
 	}
 
-	const Displacement center { CalculateWidth2(player.AnimInfo.pCelSprite == nullptr ? 96 : player.AnimInfo.pCelSprite->Width()), 0 };
-	const Point playerRenderPosition { targetBufferPosition + offset - center };
+	const Point playerRenderPosition { targetBufferPosition + offset };
 
 	DrawPlayer(out, p, tilePosition, playerRenderPosition);
 }
@@ -1735,6 +1738,10 @@ void DrawAndBlit()
 		hgt = gnScreenHeight;
 	}
 	DrawXPBar(out);
+	if (*sgOptions.Graphics.showHealthValues)
+		DrawFlaskValues(out, { PANEL_X + 134, PANEL_Y + 28 }, MyPlayer->_pHitPoints >> 6, MyPlayer->_pMaxHP >> 6);
+	if (*sgOptions.Graphics.showManaValues)
+		DrawFlaskValues(out, { PANEL_X + PANEL_WIDTH - 138, PANEL_Y + 28 }, MyPlayer->_pMana >> 6, MyPlayer->_pMaxMana >> 6);
 
 	if (IsHardwareCursor()) {
 		SetHardwareCursorVisible(ShouldShowCursor());

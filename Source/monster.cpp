@@ -1094,7 +1094,7 @@ void SpawnLoot(Monster &monster, bool sendmsg)
 		if (sgGameInitInfo.bTheoQuest != 0) {
 			SpawnTheodore(monster.position.tile);
 		} else {
-			CreateAmulet(monster.position.tile, 13, false, true);
+			CreateAmulet(monster.position.tile, 13, sendmsg, false);
 		}
 	} else if (monster.MType->mtype == MT_HORKSPWN) {
 	} else if (monster.MType->mtype == MT_NAKRUL) {
@@ -1105,10 +1105,10 @@ void SpawnLoot(Monster &monster, bool sendmsg)
 			stream_stop();
 		Quests[Q_NAKRUL]._qlog = false;
 		UberDiabloMonsterIndex = -2;
-		CreateMagicWeapon(monster.position.tile, ItemType::Sword, ICURS_GREAT_SWORD, false, true);
-		CreateMagicWeapon(monster.position.tile, ItemType::Staff, ICURS_WAR_STAFF, false, true);
-		CreateMagicWeapon(monster.position.tile, ItemType::Bow, ICURS_LONG_WAR_BOW, false, true);
-		CreateSpellBook(monster.position.tile, SPL_APOCA, false, true);
+		CreateMagicWeapon(monster.position.tile, ItemType::Sword, ICURS_GREAT_SWORD, sendmsg, false);
+		CreateMagicWeapon(monster.position.tile, ItemType::Staff, ICURS_WAR_STAFF, sendmsg, false);
+		CreateMagicWeapon(monster.position.tile, ItemType::Bow, ICURS_LONG_WAR_BOW, sendmsg, false);
+		CreateSpellBook(monster.position.tile, SPL_APOCA, sendmsg, false);
 	} else if (monster.MType->mtype != MT_GOLEM) {
 		SpawnItem(monster, monster.position.tile, sendmsg);
 	}
@@ -1484,7 +1484,7 @@ void MonsterAttackPlayer(int i, int pnum, int hit, int minDam, int maxDam)
 		Direction dir = GetDirection(player.position.tile, monster.position.tile);
 		StartPlrBlock(pnum, dir);
 		if (pnum == MyPlayerId && player.wReflections > 0) {
-			int dam = GenerateRnd((maxDam - minDam + 1) << 6) + (minDam << 6);
+			int dam = GenerateRnd(((maxDam - minDam) << 6) + 1) + (minDam << 6);
 			dam = std::max(dam + (player._pIGetHit << 6), 64);
 			CheckReflect(i, pnum, dam);
 		}
@@ -1504,7 +1504,7 @@ void MonsterAttackPlayer(int i, int pnum, int hit, int minDam, int maxDam)
 			}
 		}
 	}
-	int dam = (minDam << 6) + GenerateRnd((maxDam - minDam + 1) << 6);
+	int dam = (minDam << 6) + GenerateRnd(((maxDam - minDam) << 6) + 1);
 	dam = std::max(dam + (player._pIGetHit << 6), 64);
 	if (pnum == MyPlayerId) {
 		if (player.wReflections > 0)
@@ -1616,16 +1616,18 @@ bool MonsterRangedSpecialAttack(int i)
 	assert(monster.MData != nullptr);
 
 	if (monster.AnimInfo.CurrentFrame == monster.MData->mAFNum2 && monster.AnimInfo.TickCounterOfCurrentFrame == 0) {
-		AddMissile(
-		    monster.position.tile,
-		    monster.enemyPosition,
-		    monster._mdir,
-		    static_cast<missile_id>(monster._mVar1),
-		    TARGET_PLAYERS,
-		    i,
-		    monster._mVar3,
-		    0);
-		PlayEffect(monster, 3);
+		if (AddMissile(
+		        monster.position.tile,
+		        monster.enemyPosition,
+		        monster._mdir,
+		        static_cast<missile_id>(monster._mVar1),
+		        TARGET_PLAYERS,
+		        i,
+		        monster._mVar3,
+		        0)
+		    != nullptr) {
+			PlayEffect(monster, 3);
+		}
 	}
 
 	if (monster._mAi == AI_MEGA && monster.AnimInfo.CurrentFrame == monster.MData->mAFNum2) {
@@ -2001,9 +2003,7 @@ bool IsTileSafe(const Monster &monster, Point position)
 	bool fearsFire = (monster.mMagicRes & IMMUNE_FIRE) == 0 || monster.MType->mtype == MT_DIABLO;
 	bool fearsLightning = (monster.mMagicRes & IMMUNE_LIGHTNING) == 0 || monster.MType->mtype == MT_DIABLO;
 
-	for (int j = 0; j < ActiveMissileCount; j++) {
-		uint8_t mi = ActiveMissiles[j];
-		auto &missile = Missiles[mi];
+	for (auto &missile : Missiles) {
 		if (missile.position.tile == position) {
 			if (fearsFire && missile._mitype == MIS_FIREWALL) {
 				return false;
@@ -2558,7 +2558,7 @@ void RhinoAi(int i)
 		if (dist >= 5
 		    && v < 2 * monster._mint + 43
 		    && LineClear([&monster](Point position) { return IsTileAvailable(monster, position); }, monster.position.tile, { fx, fy })) {
-			if (AddMissile(monster.position.tile, { fx, fy }, md, MIS_RHINO, TARGET_PLAYERS, i, 0, 0) != -1) {
+			if (AddMissile(monster.position.tile, { fx, fy }, md, MIS_RHINO, TARGET_PLAYERS, i, 0, 0) != nullptr) {
 				if (monster.MData->snd_special)
 					PlayEffect(monster, 3);
 				dMonster[monster.position.tile.x][monster.position.tile.y] = -(i + 1);
@@ -2761,7 +2761,7 @@ void BatAi(int i)
 	    && (abs(xd) >= 5 || abs(yd) >= 5)
 	    && v < 4 * monster._mint + 33
 	    && LineClear([&monster](Point position) { return IsTileAvailable(monster, position); }, monster.position.tile, { fx, fy })) {
-		if (AddMissile(monster.position.tile, { fx, fy }, md, MIS_RHINO, TARGET_PLAYERS, i, 0, 0) != -1) {
+		if (AddMissile(monster.position.tile, { fx, fy }, md, MIS_RHINO, TARGET_PLAYERS, i, 0, 0) != nullptr) {
 			dMonster[monster.position.tile.x][monster.position.tile.y] = -(i + 1);
 			monster._mmode = MonsterMode::Charge;
 		}
@@ -3030,7 +3030,7 @@ void SnakeAi(int i)
 	monster._mdir = md;
 	if (abs(mx) >= 2 || abs(my) >= 2) {
 		if (abs(mx) < 3 && abs(my) < 3 && LineClear([&monster](Point position) { return IsTileAvailable(monster, position); }, monster.position.tile, { fx, fy }) && static_cast<MonsterMode>(monster._mVar1) != MonsterMode::Charge) {
-			if (AddMissile(monster.position.tile, { fx, fy }, md, MIS_RHINO, TARGET_PLAYERS, i, 0, 0) != -1) {
+			if (AddMissile(monster.position.tile, { fx, fy }, md, MIS_RHINO, TARGET_PLAYERS, i, 0, 0) != nullptr) {
 				PlayEffect(monster, 0);
 				dMonster[monster.position.tile.x][monster.position.tile.y] = -(i + 1);
 				monster._mmode = MonsterMode::Charge;

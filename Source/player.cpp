@@ -23,6 +23,7 @@
 #include "loadsave.h"
 #include "minitext.h"
 #include "missiles.h"
+#include "nthread.h"
 #include "options.h"
 #include "player.h"
 #include "qol/autopickup.h"
@@ -490,6 +491,18 @@ void StartRangeAttack(int pnum, Direction d, int cx, int cy)
 	player.position.temp = { cx, cy };
 }
 
+player_graphic GetPlayerGraphicForSpell(spell_id spellId)
+{
+	switch (spelldata[spellId].sType) {
+	case STYPE_FIRE:
+		return player_graphic::Fire;
+	case STYPE_LIGHTNING:
+		return player_graphic::Lightning;
+	default:
+		return player_graphic::Magic;
+	}
+}
+
 void StartSpell(int pnum, Direction d, int cx, int cy)
 {
 	if ((DWORD)pnum >= MAX_PLRS)
@@ -505,18 +518,7 @@ void StartSpell(int pnum, Direction d, int cx, int cy)
 		auto animationFlags = AnimationDistributionFlags::ProcessAnimationPending;
 		if (player._pmode == PM_SPELL)
 			animationFlags = static_cast<AnimationDistributionFlags>(animationFlags | AnimationDistributionFlags::RepeatedAction);
-
-		switch (spelldata[player._pSpell].sType) {
-		case STYPE_FIRE:
-			NewPlrAnim(player, player_graphic::Fire, d, player._pSFrames, 1, animationFlags, 0, player._pSFNum);
-			break;
-		case STYPE_LIGHTNING:
-			NewPlrAnim(player, player_graphic::Lightning, d, player._pSFrames, 1, animationFlags, 0, player._pSFNum);
-			break;
-		case STYPE_MAGIC:
-			NewPlrAnim(player, player_graphic::Magic, d, player._pSFrames, 1, animationFlags, 0, player._pSFNum);
-			break;
-		}
+		NewPlrAnim(player, GetPlayerGraphicForSpell(player._pSpell), d, player._pSFrames, 1, animationFlags, 0, player._pSFNum);
 	} else {
 		// Start new stand animation so that currentframe is reset
 		d = player._pdir;
@@ -559,7 +561,7 @@ void DeadItem(Player &player, Item *itm, Displacement direction)
 	if (direction != Displacement { 0, 0 } && ItemSpaceOk(target)) {
 		RespawnDeadItem(itm, target);
 		player.HoldItem = *itm;
-		NetSendCmdPItem(false, CMD_RESPAWNITEM, target);
+		NetSendCmdPItem(false, CMD_RESPAWNITEM, target, player.HoldItem);
 		return;
 	}
 
@@ -570,7 +572,7 @@ void DeadItem(Player &player, Item *itm, Displacement direction)
 				if (ItemSpaceOk(next)) {
 					RespawnDeadItem(itm, next);
 					player.HoldItem = *itm;
-					NetSendCmdPItem(false, CMD_RESPAWNITEM, next);
+					NetSendCmdPItem(false, CMD_RESPAWNITEM, next, player.HoldItem);
 					return;
 				}
 			}
@@ -2100,8 +2102,187 @@ void Player::Reset()
 	*this = std::move(*emptyPlayer);
 }
 
+int Player::GetManaShieldDamageReduction()
+{
+	constexpr int8_t Max = 7;
+	return 24 - std::min(_pSplLvl[SPL_MANASHIELD], Max) * 3;
+}
+
+void Player::RestorePartialLife()
+{
+	int wholeHitpoints = _pMaxHP >> 6;
+	int l = ((wholeHitpoints / 8) + GenerateRnd(wholeHitpoints / 4)) << 6;
+	if (IsAnyOf(_pClass, HeroClass::Warrior, HeroClass::Barbarian))
+		l *= 2;
+	if (IsAnyOf(_pClass, HeroClass::Rogue, HeroClass::Monk, HeroClass::Bard))
+		l += l / 2;
+	_pHitPoints = std::min(_pHitPoints + l, _pMaxHP);
+	_pHPBase = std::min(_pHPBase + l, _pMaxHPBase);
+}
+
+void Player::RestorePartialMana()
+{
+	int wholeManaPoints = _pMaxMana >> 6;
+	int l = ((wholeManaPoints / 8) + GenerateRnd(wholeManaPoints / 4)) << 6;
+	if (_pClass == HeroClass::Sorcerer)
+		l *= 2;
+	if (IsAnyOf(_pClass, HeroClass::Rogue, HeroClass::Monk, HeroClass::Bard))
+		l += l / 2;
+	if ((_pIFlags & ISPL_NOMANA) == 0) {
+		_pMana = std::min(_pMana + l, _pMaxMana);
+		_pManaBase = std::min(_pManaBase + l, _pMaxManaBase);
+	}
+}
+
+void Player::UpdatePreviewCelSprite(_cmd_id cmdId, Point point, uint16_t wParam1, uint16_t wParam2)
+{
+	// if game is not running don't show a preview
+	if (!gbRunGame || PauseMode != 0 || !gbProcessPlayers)
+		return;
+
+	// we can only show a preview if our command is executed in the next game tick
+	if (_pmode != PM_STAND)
+		return;
+
+	std::optional<player_graphic> graphic;
+	Direction dir = Direction::South;
+	int minimalWalkDistance = -1;
+
+	switch (cmdId) {
+	case _cmd_id::CMD_RATTACKID: {
+		auto &monster = Monsters[wParam1];
+		dir = GetDirection(position.future, monster.position.future);
+		graphic = player_graphic::Attack;
+		break;
+	}
+	case _cmd_id::CMD_SPELLID:
+	case _cmd_id::CMD_TSPELLID: {
+		auto &monster = Monsters[wParam1];
+		dir = GetDirection(position.future, monster.position.future);
+		graphic = GetPlayerGraphicForSpell(static_cast<spell_id>(wParam1));
+		break;
+	}
+	case _cmd_id::CMD_ATTACKID: {
+		auto &monster = Monsters[wParam1];
+		point = monster.position.future;
+		minimalWalkDistance = 2;
+		if (!CanTalkToMonst(monster)) {
+			dir = GetDirection(position.future, monster.position.future);
+			graphic = player_graphic::Attack;
+		}
+		break;
+	}
+	case _cmd_id::CMD_RATTACKPID: {
+		auto &targetPlayer = Players[wParam1];
+		dir = GetDirection(position.future, targetPlayer.position.future);
+		graphic = player_graphic::Attack;
+		break;
+	}
+	case _cmd_id::CMD_SPELLPID:
+	case _cmd_id::CMD_TSPELLPID: {
+		auto &targetPlayer = Players[wParam1];
+		dir = GetDirection(position.future, targetPlayer.position.future);
+		graphic = GetPlayerGraphicForSpell(static_cast<spell_id>(wParam1));
+		break;
+	}
+	case _cmd_id::CMD_ATTACKPID: {
+		auto &targetPlayer = Players[wParam1];
+		point = targetPlayer.position.future;
+		minimalWalkDistance = 2;
+		dir = GetDirection(position.future, targetPlayer.position.future);
+		graphic = player_graphic::Attack;
+		break;
+	}
+	case _cmd_id::CMD_ATTACKXY:
+	case _cmd_id::CMD_SATTACKXY:
+		dir = GetDirection(position.tile, point);
+		graphic = player_graphic::Attack;
+		minimalWalkDistance = 2;
+		break;
+	case _cmd_id::CMD_RATTACKXY:
+		dir = GetDirection(position.tile, point);
+		graphic = player_graphic::Attack;
+		break;
+	case _cmd_id::CMD_SPELLXY:
+	case _cmd_id::CMD_TSPELLXY:
+		dir = GetDirection(position.tile, point);
+		graphic = GetPlayerGraphicForSpell(static_cast<spell_id>(wParam1));
+		break;
+	case _cmd_id::CMD_SPELLXYD:
+		dir = static_cast<Direction>(wParam1);
+		graphic = GetPlayerGraphicForSpell(static_cast<spell_id>(wParam2));
+		break;
+	case _cmd_id::CMD_WALKXY:
+		minimalWalkDistance = 1;
+		break;
+	case _cmd_id::CMD_TALKXY:
+	case _cmd_id::CMD_DISARMXY:
+	case _cmd_id::CMD_OPOBJXY:
+	case _cmd_id::CMD_GOTOGETITEM:
+	case _cmd_id::CMD_GOTOAGETITEM:
+		minimalWalkDistance = 2;
+		break;
+	default:
+		return;
+	}
+
+	if (minimalWalkDistance >= 0 && position.future != point) {
+		int8_t testWalkPath[MAX_PATH_LENGTH];
+		int steps = FindPath([this](Point position) { return PosOkPlayer(*this, position); }, position.future, point, testWalkPath);
+		if (steps == 0) {
+			// Can't walk to desired location => stand still
+			return;
+		}
+		if (steps >= minimalWalkDistance) {
+			graphic = player_graphic::Walk;
+			switch (testWalkPath[0]) {
+			case WALK_N:
+				dir = Direction::North;
+				break;
+			case WALK_NE:
+				dir = Direction::NorthEast;
+				break;
+			case WALK_E:
+				dir = Direction::East;
+				break;
+			case WALK_SE:
+				dir = Direction::SouthEast;
+				break;
+			case WALK_S:
+				dir = Direction::South;
+				break;
+			case WALK_SW:
+				dir = Direction::SouthWest;
+				break;
+			case WALK_W:
+				dir = Direction::West;
+				break;
+			case WALK_NW:
+				dir = Direction::NorthWest;
+				break;
+			}
+			if (!PlrDirOK(*this, dir))
+				return;
+		}
+	}
+
+	if (!graphic || (leveltype == DTYPE_TOWN && IsAnyOf(graphic, player_graphic::Fire, player_graphic::Lightning, player_graphic::Magic)))
+		return;
+
+	LoadPlrGFX(*this, *graphic);
+	auto &celSprites = AnimationData[static_cast<size_t>(*graphic)].CelSpritesForDirections[static_cast<size_t>(dir)];
+	if (celSprites && pPreviewCelSprite != &*celSprites) {
+		pPreviewCelSprite = &*celSprites;
+		progressToNextGameTickWhenPreviewWasSet = gfProgressToNextGameTick;
+	}
+}
+
 void LoadPlrGFX(Player &player, player_graphic graphic)
 {
+	auto &animationData = player.AnimationData[static_cast<size_t>(graphic)];
+	if (animationData.RawData != nullptr)
+		return;
+
 	char prefix[16];
 	char pszName[256];
 	const char *szCel;
@@ -2197,14 +2378,15 @@ void LoadPlrGFX(Player &player, player_graphic graphic)
 	}
 
 	sprintf(pszName, R"(PlrGFX\%s\%s\%s%s.CL2)", cs, prefix, prefix, szCel);
-	auto &animationData = player.AnimationData[static_cast<size_t>(graphic)];
 	SetPlayerGPtrs(pszName, animationData.RawData, animationData.CelSpritesForDirections, animationWidth);
 }
 
 void InitPlayerGFX(Player &player)
 {
+	ResetPlayerGFX(player);
+
 	if (player._pHitPoints >> 6 == 0) {
-		player._pgfxnum = 0;
+		player._pgfxnum &= ~0xF;
 		LoadPlrGFX(player, player_graphic::Death);
 		return;
 	}
@@ -2229,14 +2411,16 @@ void ResetPlayerGFX(Player &player)
 
 void NewPlrAnim(Player &player, player_graphic graphic, Direction dir, int numberOfFrames, int delayLen, AnimationDistributionFlags flags /*= AnimationDistributionFlags::None*/, int numSkippedFrames /*= 0*/, int distributeFramesBeforeFrame /*= 0*/)
 {
-	if (player.AnimationData[static_cast<size_t>(graphic)].RawData == nullptr)
-		LoadPlrGFX(player, graphic);
+	LoadPlrGFX(player, graphic);
 
 	auto &celSprite = player.AnimationData[static_cast<size_t>(graphic)].CelSpritesForDirections[static_cast<size_t>(dir)];
 
 	CelSprite *pCelSprite = celSprite ? &*celSprite : nullptr;
 
-	player.AnimInfo.SetNewAnimation(pCelSprite, numberOfFrames, delayLen, flags, numSkippedFrames, distributeFramesBeforeFrame);
+	float previewShownGameTickFragments = 0.F;
+	if (pCelSprite == player.pPreviewCelSprite && !player.IsWalking())
+		previewShownGameTickFragments = clamp(1.F - player.progressToNextGameTickWhenPreviewWasSet, 0.F, 1.F);
+	player.AnimInfo.SetNewAnimation(pCelSprite, numberOfFrames, delayLen, flags, numSkippedFrames, distributeFramesBeforeFrame, previewShownGameTickFragments);
 }
 
 void SetPlrAnims(Player &player)
@@ -2261,6 +2445,7 @@ void SetPlrAnims(Player &player)
 	player._pSFNum = PlrGFXAnimLens[static_cast<std::size_t>(pc)][10];
 
 	auto gn = static_cast<PlayerWeaponGraphic>(player._pgfxnum & 0xF);
+	int armorGraphicIndex = player._pgfxnum & ~0xF;
 	if (pc == HeroClass::Warrior) {
 		if (gn == PlayerWeaponGraphic::Bow) {
 			if (leveltype != DTYPE_TOWN) {
@@ -2274,6 +2459,8 @@ void SetPlrAnims(Player &player)
 			player._pAFrames = 16;
 			player._pAFNum = 11;
 		}
+		if (armorGraphicIndex > 0)
+			player._pDFrames = 15;
 	} else if (pc == HeroClass::Rogue) {
 		if (gn == PlayerWeaponGraphic::Axe) {
 			player._pAFrames = 22;
@@ -2345,6 +2532,8 @@ void SetPlrAnims(Player &player)
 		} else if (gn == PlayerWeaponGraphic::Mace || gn == PlayerWeaponGraphic::MaceShield) {
 			player._pAFNum = 8;
 		}
+		if (armorGraphicIndex > 0)
+			player._pDFrames = 15;
 	}
 }
 
@@ -2933,7 +3122,10 @@ StartPlayerKill(int pnum, int earflag)
 	player.Say(HeroSpeech::AuughUh);
 
 	if (player._pgfxnum != 0) {
-		player._pgfxnum = 0;
+		if (diablolevel || earflag != 0)
+			player._pgfxnum &= ~0xF;
+		else
+			player._pgfxnum = 0;
 		ResetPlayerGFX(player);
 		SetPlrAnims(player);
 	}
@@ -3041,7 +3233,7 @@ void ApplyPlrDamage(int pnum, int dam, int minHP /*= 0*/, int frac /*= 0*/, int 
 	if (totalDamage > 0 && player.pManaShield) {
 		int8_t manaShieldLevel = player._pSplLvl[SPL_MANASHIELD];
 		if (manaShieldLevel > 0) {
-			totalDamage += totalDamage / -3;
+			totalDamage += totalDamage / -player.GetManaShieldDamageReduction();
 		}
 		if (pnum == MyPlayerId)
 			drawmanaflag = true;
@@ -3052,7 +3244,7 @@ void ApplyPlrDamage(int pnum, int dam, int minHP /*= 0*/, int frac /*= 0*/, int 
 		} else {
 			totalDamage -= player._pMana;
 			if (manaShieldLevel > 0) {
-				totalDamage += totalDamage / 2;
+				totalDamage += totalDamage / (player.GetManaShieldDamageReduction() - 1);
 			}
 			player._pMana = 0;
 			player._pManaBase = player._pMaxManaBase - player._pMaxMana;
@@ -3108,9 +3300,7 @@ void RemovePlrMissiles(int pnum)
 		}
 	}
 
-	for (int i = 0; i < ActiveMissileCount; i++) {
-		int am = ActiveMissiles[i];
-		auto &missile = Missiles[am];
+	for (auto &missile : Missiles) {
 		if (missile._mitype == MIS_STONE && missile._misource == pnum) {
 			Monsters[missile.var2]._mmode = static_cast<MonsterMode>(missile.var1);
 		}
@@ -3298,6 +3488,7 @@ void ProcessPlayers()
 				CheckNewPath(pnum, tplayer);
 			} while (tplayer);
 
+			player.pPreviewCelSprite = nullptr;
 			player.AnimInfo.ProcessAnimation();
 		}
 	}
@@ -3780,34 +3971,34 @@ void PlayDungMsgs()
 	}
 	auto &myPlayer = Players[MyPlayerId];
 
-	if (currlevel == 1 && !myPlayer._pLvlVisited[1] && !gbIsMultiplayer && (myPlayer.pDungMsgs & DungMsgCathedral) == 0) {
+	if (currlevel == 1 && !myPlayer._pLvlVisited[1] && (myPlayer.pDungMsgs & DungMsgCathedral) == 0) {
 		myPlayer.Say(HeroSpeech::TheSanctityOfThisPlaceHasBeenFouled, 40);
 		myPlayer.pDungMsgs = myPlayer.pDungMsgs | DungMsgCathedral;
-	} else if (currlevel == 5 && !myPlayer._pLvlVisited[5] && !gbIsMultiplayer && (myPlayer.pDungMsgs & DungMsgCatacombs) == 0) {
+	} else if (currlevel == 5 && !myPlayer._pLvlVisited[5] && (myPlayer.pDungMsgs & DungMsgCatacombs) == 0) {
 		myPlayer.Say(HeroSpeech::TheSmellOfDeathSurroundsMe, 40);
 		myPlayer.pDungMsgs |= DungMsgCatacombs;
-	} else if (currlevel == 9 && !myPlayer._pLvlVisited[9] && !gbIsMultiplayer && (myPlayer.pDungMsgs & DungMsgCaves) == 0) {
+	} else if (currlevel == 9 && !myPlayer._pLvlVisited[9] && (myPlayer.pDungMsgs & DungMsgCaves) == 0) {
 		myPlayer.Say(HeroSpeech::ItsHotDownHere, 40);
 		myPlayer.pDungMsgs |= DungMsgCaves;
-	} else if (currlevel == 13 && !myPlayer._pLvlVisited[13] && !gbIsMultiplayer && (myPlayer.pDungMsgs & DungMsgHell) == 0) {
+	} else if (currlevel == 13 && !myPlayer._pLvlVisited[13] && (myPlayer.pDungMsgs & DungMsgHell) == 0) {
 		myPlayer.Say(HeroSpeech::IMustBeGettingClose, 40);
 		myPlayer.pDungMsgs |= DungMsgHell;
-	} else if (currlevel == 16 && !myPlayer._pLvlVisited[16] && !gbIsMultiplayer && (myPlayer.pDungMsgs & DungMsgDiablo) == 0) {
+	} else if (currlevel == 16 && !myPlayer._pLvlVisited[16] && (myPlayer.pDungMsgs & DungMsgDiablo) == 0) {
 		sfxdelay = 40;
 		sfxdnum = PS_DIABLVLINT;
 		myPlayer.pDungMsgs |= DungMsgDiablo;
-	} else if (currlevel == 17 && !myPlayer._pLvlVisited[17] && !gbIsMultiplayer && (myPlayer.pDungMsgs2 & 1) == 0) {
+	} else if (currlevel == 17 && !myPlayer._pLvlVisited[17] && (myPlayer.pDungMsgs2 & 1) == 0) {
 		sfxdelay = 10;
 		sfxdnum = USFX_DEFILER1;
 		Quests[Q_DEFILER]._qactive = QUEST_ACTIVE;
 		Quests[Q_DEFILER]._qlog = true;
 		Quests[Q_DEFILER]._qmsg = TEXT_DEFILER1;
 		myPlayer.pDungMsgs2 |= 1;
-	} else if (currlevel == 19 && !myPlayer._pLvlVisited[19] && !gbIsMultiplayer && (myPlayer.pDungMsgs2 & 4) == 0) {
+	} else if (currlevel == 19 && !myPlayer._pLvlVisited[19] && (myPlayer.pDungMsgs2 & 4) == 0) {
 		sfxdelay = 10;
 		sfxdnum = USFX_DEFILER3;
 		myPlayer.pDungMsgs2 |= 4;
-	} else if (currlevel == 21 && !myPlayer._pLvlVisited[21] && !gbIsMultiplayer && (myPlayer.pDungMsgs & 32) == 0) {
+	} else if (currlevel == 21 && !myPlayer._pLvlVisited[21] && (myPlayer.pDungMsgs & 32) == 0) {
 		myPlayer.Say(HeroSpeech::ThisIsAPlaceOfGreatPower, 30);
 		myPlayer.pDungMsgs |= 32;
 	} else {

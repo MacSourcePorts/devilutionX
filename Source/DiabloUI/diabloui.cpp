@@ -142,6 +142,8 @@ void UiInitList(void (*fnFocus)(int value), void (*fnSelect)(int value), void (*
 			SelectedItemMax = std::max(uiList->m_vecItems.size() - 1, static_cast<size_t>(0));
 			ListViewportSize = uiList->viewportSize;
 			gUiList = uiList;
+			if (selectedItem <= SelectedItemMax && HasAnyOf(uiList->GetItem(selectedItem)->uiFlags, UiFlags::NeedsNextElement))
+				AdjustListOffset(selectedItem + 1);
 		} else if (item->IsType(UiType::Scrollbar)) {
 			uiScrollbar = static_cast<UiScrollbar *>(item.get());
 		}
@@ -214,11 +216,9 @@ void UiFocus(std::size_t itemIndex, bool checkUp, bool ignoreItemsWraps = false)
 		pItem = gUiList->GetItem(itemIndex);
 	}
 
-	if (HasAnyOf(pItem->uiFlags, UiFlags::NeedsNextElement)) {
+	if (HasAnyOf(pItem->uiFlags, UiFlags::NeedsNextElement))
 		AdjustListOffset(itemIndex + 1);
-	} else {
-		AdjustListOffset(itemIndex);
-	}
+	AdjustListOffset(itemIndex);
 
 	SelectedItem = itemIndex;
 
@@ -436,6 +436,7 @@ void UiHandleEvents(SDL_Event *event)
 		const Uint8 *state = SDLC_GetKeyState();
 		if (state[SDLC_KEYSTATE_LALT] != 0 || state[SDLC_KEYSTATE_RALT] != 0) {
 			sgOptions.Graphics.fullscreen.SetValue(!IsFullScreen());
+			SaveOptions();
 			if (gfnFullscreen != nullptr)
 				gfnFullscreen();
 			return;
@@ -458,8 +459,15 @@ void UiHandleEvents(SDL_Event *event)
 		} else if (event->window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
 			music_mute();
 		} else if (event->window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
-			music_unmute();
+			diablo_focus_unpause();
 		}
+	}
+#else
+	if (event->type == SDL_ACTIVEEVENT && (event->active.state & SDL_APPINPUTFOCUS) != 0) {
+		if (event->active.gain == 0)
+			music_mute();
+		else
+			diablo_focus_unpause();
 	}
 #endif
 }

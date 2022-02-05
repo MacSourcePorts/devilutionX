@@ -17,7 +17,7 @@ namespace devilution {
 #define INV_SLOT_SIZE_PX 28
 #define INV_SLOT_HALF_SIZE_PX (INV_SLOT_SIZE_PX / 2)
 #define INV_ROW_SLOT_SIZE 10
-constexpr Size InventorySlotSizeInPixels { INV_SLOT_SIZE_PX, INV_SLOT_SIZE_PX };
+constexpr Size InventorySlotSizeInPixels { INV_SLOT_SIZE_PX };
 
 enum inv_item : int8_t {
 	// clang-format off
@@ -175,6 +175,7 @@ bool CanPut(Point position);
 bool TryInvPut();
 int InvPutItem(Player &player, Point position);
 int SyncPutItem(Player &player, Point position, int idx, uint16_t icreateinfo, int iseed, int Id, int dur, int mdur, int ch, int mch, int ivalue, uint32_t ibuff, int toHit, int maxDam, int minStr, int minMag, int minDex, int ac);
+int SyncDropItem(Point position, int idx, uint16_t icreateinfo, int iseed, int id, int dur, int mdur, int ch, int mch, int ivalue, uint32_t ibuff, int toHit, int maxDam, int minStr, int minMag, int minDex, int ac);
 int8_t CheckInvHLight();
 void RemoveScroll(Player &player);
 bool UseScroll();

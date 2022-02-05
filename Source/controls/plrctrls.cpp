@@ -15,6 +15,7 @@
 #include "cursor.h"
 #include "doom.h"
 #include "engine/point.hpp"
+#include "engine/points_in_rectangle_range.hpp"
 #include "gmenu.h"
 #include "help.h"
 #include "hwcursor.hpp"
@@ -34,7 +35,7 @@ namespace devilution {
 
 ControlTypes ControlMode = ControlTypes::None;
 int pcurstrig = -1;
-int pcursmissile = -1;
+Missile *pcursmissile = nullptr;
 quest_id pcursquest = Q_INVALID;
 
 /**
@@ -124,61 +125,68 @@ int GetDistanceRanged(Point destination)
 	return Players[MyPlayerId].position.future.ExactDistance(destination);
 }
 
-/**
- * @todo The loops in this function are iterating through tiles offset from the player position. This
- * could be accomplished by looping over the values in the Direction enum and making use of
- * Point math instead of nested loops from [-1, 1].
- */
 void FindItemOrObject()
 {
-	int mx = Players[MyPlayerId].position.future.x;
-	int my = Players[MyPlayerId].position.future.y;
+	Point futurePosition = Players[MyPlayerId].position.future;
 	int rotations = 5;
 
-	// As the player can not stand on the edge of the map this is safe from OOB
-	for (int xx = -1; xx < 2; xx++) {
-		for (int yy = -1; yy < 2; yy++) {
-			if (dItem[mx + xx][my + yy] <= 0)
-				continue;
-			int i = dItem[mx + xx][my + yy] - 1;
-			auto &item = Items[i];
-			if (item.isEmpty()
-			    || item._iSelFlag == 0)
-				continue;
-			int newRotations = GetRotaryDistance({ mx + xx, my + yy });
-			if (rotations < newRotations)
-				continue;
-			if (xx != 0 && yy != 0 && GetDistance({ mx + xx, my + yy }, 1) == 0)
-				continue;
-			rotations = newRotations;
-			pcursitem = i;
-			cursPosition = Point { mx, my } + Displacement { xx, yy };
+	auto searchArea = PointsInRectangleRangeColMajor { Rectangle { futurePosition, 1 } };
+
+	for (Point targetPosition : searchArea) {
+		// As the player can not stand on the edge of the map this is safe from OOB
+		int8_t itemId = dItem[targetPosition.x][targetPosition.y] - 1;
+		if (itemId < 0) {
+			// there shouldn't be any items that occupy multiple ground tiles, but just in case only considering positive indexes here
+
+			continue;
 		}
+		auto &item = Items[itemId];
+		if (item.isEmpty() || item._iSelFlag == 0) {
+			continue;
+		}
+
+		int newRotations = GetRotaryDistance(targetPosition);
+		if (rotations < newRotations) {
+			continue;
+		}
+		if (targetPosition != futurePosition && GetDistance(targetPosition, 1) == 0) {
+			// Don't check the tile we're leaving if the player is walking
+			continue;
+		}
+		rotations = newRotations;
+		pcursitem = itemId;
+		cursPosition = targetPosition;
 	}
 
-	if (leveltype == DTYPE_TOWN || pcursitem != -1)
+	if (leveltype == DTYPE_TOWN || pcursitem != -1) {
 		return; // Don't look for objects in town
+	}
 
-	for (int xx = -1; xx < 2; xx++) {
-		for (int yy = -1; yy < 2; yy++) {
-			if (dObject[mx + xx][my + yy] == 0)
-				continue;
-			int o = abs(dObject[mx + xx][my + yy]) - 1;
-			if (Objects[o]._oSelFlag == 0)
-				continue;
-			if (xx == 0 && yy == 0 && Objects[o]._oDoorFlag)
-				continue; // Ignore doorway so we don't get stuck behind barrels
-			int newRotations = GetRotaryDistance({ mx + xx, my + yy });
-			if (rotations < newRotations)
-				continue;
-			if (xx != 0 && yy != 0 && GetDistance({ mx + xx, my + yy }, 1) == 0)
-				continue;
-			if (Objects[o].IsDisabled())
-				continue;
-			rotations = newRotations;
-			pcursobj = o;
-			cursPosition = Point { mx, my } + Displacement { xx, yy };
+	for (Point targetPosition : searchArea) {
+		Object *object = ObjectAtPosition(targetPosition);
+		if (object == nullptr || object->_oSelFlag == 0) {
+			// No object or non-interactive object
+			continue;
 		}
+		if (targetPosition == futurePosition && object->_oDoorFlag) {
+			continue; // Ignore doorway so we don't get stuck behind barrels
+		}
+
+		int newRotations = GetRotaryDistance(targetPosition);
+		if (rotations < newRotations) {
+			continue;
+		}
+		if (targetPosition != futurePosition && GetDistance(targetPosition, 1) == 0) {
+			// Don't check the tile we're leaving if the player is walking
+			continue;
+		}
+		if (object->IsDisabled()) {
+			continue;
+		}
+
+		rotations = newRotations;
+		pcursobj = object->GetId();
+		cursPosition = targetPosition;
 	}
 }
 
@@ -397,26 +405,24 @@ void FindTrigger()
 	if (pcursitem != -1 || pcursobj != -1)
 		return; // Prefer showing items/objects over triggers (use of cursm* conflicts)
 
-	for (int i = 0; i < ActiveMissileCount; i++) {
-		int mi = ActiveMissiles[i];
-		auto &missile = Missiles[mi];
+	for (auto &missile : Missiles) {
 		if (missile._mitype == MIS_TOWN || missile._mitype == MIS_RPORTAL) {
 			const int newDistance = GetDistance(missile.position.tile, 2);
 			if (newDistance == 0)
 				continue;
-			if (pcursmissile != -1 && distance < newDistance)
+			if (pcursmissile != nullptr && distance < newDistance)
 				continue;
 			const int newRotations = GetRotaryDistance(missile.position.tile);
-			if (pcursmissile != -1 && distance == newDistance && rotations < newRotations)
+			if (pcursmissile != nullptr && distance == newDistance && rotations < newRotations)
 				continue;
 			cursPosition = missile.position.tile;
-			pcursmissile = mi;
+			pcursmissile = &missile;
 			distance = newDistance;
 			rotations = newRotations;
 		}
 	}
 
-	if (pcursmissile == -1) {
+	if (pcursmissile == nullptr) {
 		for (int i = 0; i < numtrigs; i++) {
 			int tx = trigs[i].position.x;
 			int ty = trigs[i].position.y;
@@ -1435,7 +1441,7 @@ void plrctrls_after_check_curs_move()
 	pcursmonst = -1;
 	pcursitem = -1;
 	pcursobj = -1;
-	pcursmissile = -1;
+	pcursmissile = nullptr;
 	pcurstrig = -1;
 	pcursquest = Q_INVALID;
 	cursPosition = { -1, -1 };
@@ -1582,12 +1588,12 @@ bool TryDropItem()
 
 	if (currlevel == 0) {
 		if (UseItemOpensHive(myPlayer.HoldItem, myPlayer.position.tile)) {
-			NetSendCmdPItem(true, CMD_PUTITEM, { 79, 61 });
+			NetSendCmdPItem(true, CMD_PUTITEM, { 79, 61 }, myPlayer.HoldItem);
 			NewCursor(CURSOR_HAND);
 			return true;
 		}
 		if (UseItemOpensCrypt(myPlayer.HoldItem, myPlayer.position.tile)) {
-			NetSendCmdPItem(true, CMD_PUTITEM, { 35, 20 });
+			NetSendCmdPItem(true, CMD_PUTITEM, { 35, 20 }, myPlayer.HoldItem);
 			NewCursor(CURSOR_HAND);
 			return true;
 		}
@@ -1702,8 +1708,8 @@ void PerformSecondaryAction()
 		NetSendCmdLocParam1(true, CMD_OPOBJXY, cursPosition, pcursobj);
 	} else {
 		auto &myPlayer = Players[MyPlayerId];
-		if (pcursmissile != -1) {
-			MakePlrPath(myPlayer, Missiles[pcursmissile].position.tile, true);
+		if (pcursmissile != nullptr) {
+			MakePlrPath(myPlayer, pcursmissile->position.tile, true);
 			myPlayer.destAction = ACTION_WALK;
 		} else if (pcurstrig != -1) {
 			MakePlrPath(myPlayer, trigs[pcurstrig].position, true);

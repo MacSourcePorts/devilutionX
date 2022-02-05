@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#if defined(_WIN64) || defined(_WIN32)
+#if (defined(_WIN64) || defined(_WIN32)) && !defined(__UWP__)
 #include <find_steam_game.h>
 #endif
 
@@ -60,13 +60,13 @@ std::optional<MpqArchive> font_mpq;
 
 namespace {
 
-std::optional<MpqArchive> LoadMPQ(const std::vector<std::string> &paths, const char *mpqName)
+std::optional<MpqArchive> LoadMPQ(const std::vector<std::string> &paths, string_view mpqName)
 {
 	std::optional<MpqArchive> archive;
 	std::string mpqAbsPath;
 	std::int32_t error = 0;
 	for (const auto &path : paths) {
-		mpqAbsPath = path + mpqName;
+		mpqAbsPath = path + mpqName.data();
 		if ((archive = MpqArchive::Open(mpqAbsPath.c_str(), error))) {
 			LogVerbose("  Found: {} in {}", mpqName, path);
 			paths::SetMpqDir(path);
@@ -96,7 +96,7 @@ std::vector<std::string> GetMPQSearchPaths()
 	paths.emplace_back("/usr/local/share/diasurgical/devilutionx/");
 #elif defined(__3DS__)
 	paths.emplace_back("romfs:/");
-#elif defined(_WIN64) || defined(_WIN32)
+#elif (defined(_WIN64) || defined(_WIN32)) && !defined(__UWP__)
 	char gogpath[_FSG_PATH_MAX];
 	fsg_get_gog_game_path(gogpath, "1412601690");
 	if (strlen(gogpath) > 0) {
@@ -125,18 +125,6 @@ std::vector<std::string> GetMPQSearchPaths()
 	return paths;
 }
 
-void init_language_archives(const std::vector<std::string> &paths)
-{
-	string_view code = *sgOptions.Language.code;
-	if (code != "en") {
-		char langMpqName[10] = {};
-		CopyUtf8(langMpqName, code.data(), sizeof(langMpqName));
-
-		strncat(langMpqName, ".mpq", sizeof(langMpqName) - strlen(langMpqName) - 1);
-		lang_mpq = LoadMPQ(paths, langMpqName);
-	}
-}
-
 } // namespace
 
 void init_cleanup()
@@ -160,7 +148,7 @@ void init_cleanup()
 	NetClose();
 }
 
-void init_archives()
+void LoadCoreArchives()
 {
 	auto paths = GetMPQSearchPaths();
 
@@ -169,8 +157,25 @@ void init_archives()
 	devilutionx_mpq = LoadMPQ(paths, "devilutionx.mpq");
 #endif
 	font_mpq = LoadMPQ(paths, "fonts.mpq"); // Extra fonts
+}
 
-	init_language_archives(paths);
+void LoadLanguageArchive()
+{
+	lang_mpq = std::nullopt;
+
+	string_view code = *sgOptions.Language.code;
+	if (code != "en") {
+		std::string langMpqName { code };
+		langMpqName.append(".mpq");
+
+		auto paths = GetMPQSearchPaths();
+		lang_mpq = LoadMPQ(paths, langMpqName);
+	}
+}
+
+void LoadGameArchives()
+{
+	auto paths = GetMPQSearchPaths();
 
 	diabdat_mpq = LoadMPQ(paths, "DIABDAT.MPQ");
 	if (!diabdat_mpq) {
@@ -210,12 +215,6 @@ void init_archives()
 		UiErrorOkDialog(_("Some Hellfire MPQs are missing"), _("Not all Hellfire MPQs were found.\nPlease copy all the hf*.mpq files."));
 		app_fatal(nullptr);
 	}
-}
-
-void init_language_archives()
-{
-	lang_mpq = std::nullopt;
-	init_language_archives(GetMPQSearchPaths());
 }
 
 void init_create_window()

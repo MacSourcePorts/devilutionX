@@ -255,6 +255,8 @@ void music_start(uint8_t nTrack)
 			}
 
 			music->setVolume(VolumeLogToLinear(sgOptions.Audio.nMusicVolume, VOLUME_MIN, VOLUME_MAX));
+			if (!diablo_is_focused())
+				music_mute();
 			if (!music->play(/*iterations=*/0)) {
 				LogError(LogCategory::Audio, "Aulib::Stream::play (from music_start): {}", SDL_GetError());
 				CleanupMusic();
@@ -301,13 +303,13 @@ int sound_get_or_set_sound_volume(int volume)
 void music_mute()
 {
 	if (music)
-		music->setVolume(VolumeLogToLinear(VOLUME_MIN, VOLUME_MIN, VOLUME_MAX));
+		music->mute();
 }
 
 void music_unmute()
 {
 	if (music)
-		music->setVolume(VolumeLogToLinear(sgOptions.Audio.nMusicVolume, VOLUME_MIN, VOLUME_MAX));
+		music->unmute();
 }
 
 } // namespace devilution

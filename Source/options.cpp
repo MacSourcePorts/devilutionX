@@ -44,7 +44,7 @@ namespace devilution {
 #define DEFAULT_AUDIO_BUFFER_SIZE 2048
 #endif
 #ifndef DEFAULT_AUDIO_RESAMPLING_QUALITY
-#define DEFAULT_AUDIO_RESAMPLING_QUALITY 5
+#define DEFAULT_AUDIO_RESAMPLING_QUALITY 3
 #endif
 
 namespace {
@@ -271,7 +271,7 @@ void OptionShowFPSChanged()
 void OptionLanguageCodeChanged()
 {
 	LanguageInitialize();
-	init_language_archives();
+	LoadLanguageArchive();
 }
 
 void OptionGameModeChanged()
@@ -302,7 +302,6 @@ void OptionAudioChanged()
 
 /** Game options */
 Options sgOptions;
-bool sbWasOptionsLoaded = false;
 
 #if SDL_VERSION_ATLEAST(2, 0, 0)
 bool HardwareCursorSupported()
@@ -354,12 +353,13 @@ void LoadOptions()
 
 	if (demo::IsRunning())
 		demo::OverrideOptions();
-
-	sbWasOptionsLoaded = true;
 }
 
 void SaveOptions()
 {
+	if (demo::IsRunning())
+		return;
+
 	for (OptionCategoryBase *pCategory : sgOptions.GetCategories()) {
 		for (OptionEntryBase *pEntry : pCategory->GetEntries()) {
 			pEntry->SaveToIni(pCategory->GetKey());
@@ -411,7 +411,7 @@ OptionEntryFlags OptionEntryBase::GetFlags() const
 }
 void OptionEntryBase::SetValueChangedCallback(std::function<void()> callback)
 {
-	this->callback = callback;
+	this->callback = std::move(callback);
 }
 void OptionEntryBase::NotifyValueChanged()
 {
@@ -765,6 +765,8 @@ GraphicsOptions::GraphicsOptions()
 #endif
     , limitFPS("FPS Limiter", OptionEntryFlags::None, N_("FPS Limiter"), N_("FPS is limited to avoid high CPU load. Limit considers refresh rate."), true)
     , showFPS("Show FPS", OptionEntryFlags::None, N_("Show FPS"), N_("Displays the FPS in the upper left corner of the screen."), true)
+    , showHealthValues("Show health values", OptionEntryFlags::None, N_("Show health values"), N_("Displays current / max health value on health globe."), false)
+    , showManaValues("Show mana values", OptionEntryFlags::None, N_("Show mana values"), N_("Displays current / max mana value on mana globe."), false)
 {
 	resolution.SetValueChangedCallback(ResizeWindow);
 	fullscreen.SetValueChangedCallback(SetFullscreenMode);
@@ -796,14 +798,16 @@ std::vector<OptionEntryBase *> GraphicsOptions::GetEntries()
 		&integerScaling,
 		&vSync,
 #endif
+		&limitFPS,
+		&showFPS,
+		&showHealthValues,
+		&showManaValues,
 		&colorCycling,
 #if SDL_VERSION_ATLEAST(2, 0, 0)
 		&hardwareCursor,
 		&hardwareCursorForItems,
 		&hardwareCursorMaxSize,
 #endif
-		&limitFPS,
-		&showFPS,
 	};
 	// clang-format on
 }
@@ -847,8 +851,10 @@ GameplayOptions::GameplayOptions()
 std::vector<OptionEntryBase *> GameplayOptions::GetEntries()
 {
 	return {
-		&runInTown,
 		&grabInput,
+		&runInTown,
+		&adriaRefillsMana,
+		&randomizeQuests,
 		&theoQuest,
 		&cowQuest,
 		&friendlyFire,
@@ -856,20 +862,18 @@ std::vector<OptionEntryBase *> GameplayOptions::GetEntries()
 		&testBarbarian,
 		&experienceBar,
 		&enemyHealthBar,
+		&showMonsterType,
+		&disableCripplingShrines,
+		&quickCast,
+		&autoRefillBelt,
+		&autoPickupInTown,
 		&autoGoldPickup,
 		&autoElixirPickup,
-		&autoPickupInTown,
-		&adriaRefillsMana,
 		&autoEquipWeapons,
 		&autoEquipArmor,
 		&autoEquipHelms,
 		&autoEquipShields,
 		&autoEquipJewelry,
-		&randomizeQuests,
-		&showMonsterType,
-		&autoRefillBelt,
-		&disableCripplingShrines,
-		&quickCast,
 		&numHealPotionPickup,
 		&numFullHealPotionPickup,
 		&numManaPotionPickup,
@@ -1048,6 +1052,18 @@ KeymapperOptions::KeymapperOptions()
 		keyIDToKeyName.emplace(DVL_VK_F1 + i, fmt::format("F{}", i + 1));
 	}
 
+	keyIDToKeyName.emplace(DVL_VK_LMENU, "LALT");
+	keyIDToKeyName.emplace(DVL_VK_RMENU, "RALT");
+	keyIDToKeyName.emplace(DVL_VK_SPACE, "SPACE");
+	keyIDToKeyName.emplace(DVL_VK_RCONTROL, "RCONTROL");
+	keyIDToKeyName.emplace(DVL_VK_LCONTROL, "LCONTROL");
+	keyIDToKeyName.emplace(DVL_VK_SNAPSHOT, "PRINT");
+	keyIDToKeyName.emplace(DVL_VK_PAUSE, "PAUSE");
+	keyIDToKeyName.emplace(DVL_VK_TAB, "TAB");
+	keyIDToKeyName.emplace(DVL_VK_MBUTTON, "MMOUSE");
+	keyIDToKeyName.emplace(DVL_VK_X1BUTTON, "X1MOUSE");
+	keyIDToKeyName.emplace(DVL_VK_X2BUTTON, "X2MOUSE");
+
 	keyNameToKeyID.reserve(keyIDToKeyName.size());
 	for (const auto &kv : keyIDToKeyName) {
 		keyNameToKeyID.emplace(kv.second, kv.first);
@@ -1063,11 +1079,12 @@ std::vector<OptionEntryBase *> KeymapperOptions::GetEntries()
 	return entries;
 }
 
-KeymapperOptions::Action::Action(string_view key, string_view name, string_view description, int defaultKey, std::function<void()> action, std::function<bool()> enable, int index)
+KeymapperOptions::Action::Action(string_view key, string_view name, string_view description, int defaultKey, std::function<void()> actionPressed, std::function<void()> actionReleased, std::function<bool()> enable, int index)
     : OptionEntryBase(key, OptionEntryFlags::None, name, description)
     , defaultKey(defaultKey)
-    , action(action)
-    , enable(enable)
+    , actionPressed(std::move(actionPressed))
+    , actionReleased(std::move(actionReleased))
+    , enable(std::move(enable))
     , dynamicIndex(index)
 {
 	if (index >= 0) {
@@ -1164,9 +1181,9 @@ bool KeymapperOptions::Action::SetValue(int value)
 	return true;
 }
 
-void KeymapperOptions::AddAction(string_view key, string_view name, string_view description, int defaultKey, std::function<void()> action, std::function<bool()> enable, int index)
+void KeymapperOptions::AddAction(string_view key, string_view name, string_view description, int defaultKey, std::function<void()> actionPressed, std::function<void()> actionReleased, std::function<bool()> enable, int index)
 {
-	actions.push_back(std::unique_ptr<Action>(new Action(key, name, description, defaultKey, action, enable, index)));
+	actions.push_back(std::unique_ptr<Action>(new Action(key, name, description, defaultKey, std::move(actionPressed), std::move(actionReleased), std::move(enable), index)));
 }
 
 void KeymapperOptions::KeyPressed(int key) const
@@ -1175,14 +1192,30 @@ void KeymapperOptions::KeyPressed(int key) const
 	if (it == keyIDToAction.end())
 		return; // Ignore unmapped keys.
 
-	const auto &action = it->second;
+	const Action &action = it->second.get();
 
 	// Check that the action can be triggered and that the chat textbox is not
 	// open.
-	if (!action.get().enable() || talkflag)
+	if (!action.actionPressed || (action.enable && !action.enable()) || talkflag)
 		return;
 
-	action.get().action();
+	action.actionPressed();
+}
+
+void KeymapperOptions::KeyReleased(int key) const
+{
+	auto it = keyIDToAction.find(key);
+	if (it == keyIDToAction.end())
+		return; // Ignore unmapped keys.
+
+	const Action &action = it->second.get();
+
+	// Check that the action can be triggered and that the chat textbox is not
+	// open.
+	if (!action.actionReleased || (action.enable && !action.enable()) || talkflag)
+		return;
+
+	action.actionReleased();
 }
 
 string_view KeymapperOptions::KeyNameForAction(string_view actionName) const

@@ -12,7 +12,7 @@
 namespace devilution {
 
 enum class StartUpGameMode {
-	/** @brief If hellfire is present, asks the user what game he wants to start. */
+	/** @brief If hellfire is present, asks the user what game they want to start. */
 	Ask = 0,
 	Hellfire = 1,
 	Diablo = 2,
@@ -408,6 +408,10 @@ struct GraphicsOptions : OptionCategoryBase {
 	OptionEntryBoolean limitFPS;
 	/** @brief Show FPS, even without the -f command line flag. */
 	OptionEntryBoolean showFPS;
+	/** @brief Display current/max health values on health globe. */
+	OptionEntryBoolean showHealthValues;
+	/** @brief Display current/max mana values on mana globe. */
+	OptionEntryBoolean showManaValues;
 };
 
 struct GameplayOptions : OptionCategoryBase {
@@ -543,9 +547,10 @@ struct KeymapperOptions : OptionCategoryBase {
 		bool SetValue(int value);
 
 	private:
-		Action(string_view key, string_view name, string_view description, int defaultKey, std::function<void()> action, std::function<bool()> enable, int index);
+		Action(string_view key, string_view name, string_view description, int defaultKey, std::function<void()> actionPressed, std::function<void()> actionReleased, std::function<bool()> enable, int index);
 		int defaultKey;
-		std::function<void()> action;
+		std::function<void()> actionPressed;
+		std::function<void()> actionReleased;
 		std::function<bool()> enable;
 		int boundKey = DVL_VK_INVALID;
 		int dynamicIndex;
@@ -560,8 +565,9 @@ struct KeymapperOptions : OptionCategoryBase {
 
 	void AddAction(
 	    string_view key, string_view name, string_view description, int defaultKey,
-	    std::function<void()> action, std::function<bool()> enable = [] { return true; }, int index = -1);
+	    std::function<void()> actionPressed, std::function<void()> actionReleased = nullptr, std::function<bool()> enable = nullptr, int index = -1);
 	void KeyPressed(int key) const;
+	void KeyReleased(int key) const;
 	string_view KeyNameForAction(string_view actionName) const;
 
 private:
@@ -587,23 +593,22 @@ struct Options {
 	[[nodiscard]] std::vector<OptionCategoryBase *> GetCategories()
 	{
 		return {
+			&Language,
 			&StartUp,
+			&Graphics,
+			&Audio,
 			&Diablo,
 			&Hellfire,
-			&Audio,
 			&Gameplay,
-			&Graphics,
 			&Controller,
 			&Network,
 			&Chat,
-			&Language,
 			&Keymapper,
 		};
 	}
 };
 
 extern DVL_API_FOR_TEST Options sgOptions;
-extern bool sbWasOptionsLoaded;
 
 bool HardwareCursorSupported();
 

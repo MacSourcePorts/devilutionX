@@ -513,26 +513,62 @@ bool FetchMessage_Real(tagMSG *lpMsg)
 		break;
 	case SDL_MOUSEBUTTONDOWN: {
 		int button = e.button.button;
-		if (button == SDL_BUTTON_LEFT) {
+		switch (button) {
+		case SDL_BUTTON_LEFT:
 			lpMsg->message = DVL_WM_LBUTTONDOWN;
 			lpMsg->lParam = PositionForMouse(e.button.x, e.button.y);
 			lpMsg->wParam = KeystateForMouse(DVL_MK_LBUTTON);
-		} else if (button == SDL_BUTTON_RIGHT) {
+			break;
+		case SDL_BUTTON_RIGHT:
 			lpMsg->message = DVL_WM_RBUTTONDOWN;
 			lpMsg->lParam = PositionForMouse(e.button.x, e.button.y);
 			lpMsg->wParam = KeystateForMouse(DVL_MK_RBUTTON);
+			break;
+		case SDL_BUTTON_MIDDLE:
+			lpMsg->message = DVL_WM_MBUTTONDOWN;
+			lpMsg->lParam = PositionForMouse(e.button.x, e.button.y);
+			lpMsg->wParam = KeystateForMouse(0);
+			break;
+		case SDL_BUTTON_X1:
+			lpMsg->message = DVL_WM_X1BUTTONDOWN;
+			lpMsg->lParam = PositionForMouse(e.button.x, e.button.y);
+			lpMsg->wParam = KeystateForMouse(0);
+			break;
+		case SDL_BUTTON_X2:
+			lpMsg->message = DVL_WM_X2BUTTONDOWN;
+			lpMsg->lParam = PositionForMouse(e.button.x, e.button.y);
+			lpMsg->wParam = KeystateForMouse(0);
+			break;
 		}
 	} break;
 	case SDL_MOUSEBUTTONUP: {
 		int button = e.button.button;
-		if (button == SDL_BUTTON_LEFT) {
+		switch (button) {
+		case SDL_BUTTON_LEFT:
 			lpMsg->message = DVL_WM_LBUTTONUP;
 			lpMsg->lParam = PositionForMouse(e.button.x, e.button.y);
 			lpMsg->wParam = KeystateForMouse(0);
-		} else if (button == SDL_BUTTON_RIGHT) {
+			break;
+		case SDL_BUTTON_RIGHT:
 			lpMsg->message = DVL_WM_RBUTTONUP;
 			lpMsg->lParam = PositionForMouse(e.button.x, e.button.y);
 			lpMsg->wParam = KeystateForMouse(0);
+			break;
+		case SDL_BUTTON_MIDDLE:
+			lpMsg->message = DVL_WM_MBUTTONUP;
+			lpMsg->lParam = PositionForMouse(e.button.x, e.button.y);
+			lpMsg->wParam = KeystateForMouse(0);
+			break;
+		case SDL_BUTTON_X1:
+			lpMsg->message = DVL_WM_X1BUTTONUP;
+			lpMsg->lParam = PositionForMouse(e.button.x, e.button.y);
+			lpMsg->wParam = KeystateForMouse(0);
+			break;
+		case SDL_BUTTON_X2:
+			lpMsg->message = DVL_WM_X2BUTTONUP;
+			lpMsg->lParam = PositionForMouse(e.button.x, e.button.y);
+			lpMsg->wParam = KeystateForMouse(0);
+			break;
 		}
 	} break;
 #ifndef USE_SDL1
@@ -612,6 +648,15 @@ bool FetchMessage_Real(tagMSG *lpMsg)
 			return FalseAvail("SDL_WINDOWEVENT", e.window.event);
 		}
 
+		break;
+#else
+	case SDL_ACTIVEEVENT:
+		if ((e.active.state & SDL_APPINPUTFOCUS) != 0) {
+			if (e.active.gain == 0)
+				diablo_focus_pause();
+			else
+				diablo_focus_unpause();
+		}
 		break;
 #endif
 	default:
