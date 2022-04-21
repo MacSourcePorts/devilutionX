@@ -1,5 +1,5 @@
 # game/app specific values
-export APP_VERSION="1.2.0"
+export APP_VERSION="1.4.0"
 # devilutionX builds an .icns file, we will use that once it's been built
 export ICONSDIR="Packaging/apple/"
 export ICONSFILENAME="AppIcon"
