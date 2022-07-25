@@ -11,12 +11,6 @@
 
 namespace devilution {
 
-inline Sint16 GetUIOffsetY()
-{
-	return ((Sint16)((GetScreenHeight() - 480) / 2));
-}
-#define UI_OFFSET_Y (GetUIOffsetY())
-
 enum interface_mode : uint16_t {
 	// clang-format off
 	WM_DIABNEXTLVL  = 0x402, // WM_USER+2
@@ -50,7 +44,8 @@ enum Cutscenes : uint8_t {
 };
 
 void interface_msg_pump();
-bool IncProgress();
+void IncProgress();
+void CompleteProgress();
 void ShowProgress(interface_mode uMsg);
 
 } // namespace devilution

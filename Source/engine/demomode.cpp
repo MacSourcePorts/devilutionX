@@ -1,15 +1,19 @@
+#include "engine/demomode.h"
+
 #include <deque>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 
-#include "demomode.h"
+#include "controls/plrctrls.h"
 #include "menu.h"
 #include "nthread.h"
 #include "options.h"
 #include "pfile.h"
 #include "utils/display.h"
+#include "utils/endian_stream.hpp"
 #include "utils/paths.h"
+#include "utils/str_cat.hpp"
 
 namespace devilution {
 
@@ -21,87 +25,62 @@ enum class DemoMsgType {
 	Message = 2,
 };
 
-struct demoMsg {
+struct DemoMsg {
 	DemoMsgType type;
 	uint32_t message;
-	int32_t wParam;
-	int32_t lParam;
+	uint32_t wParam;
+	uint16_t lParam;
 	float progressToNextGameTick;
 };
 
 int DemoNumber = -1;
 bool Timedemo = false;
 int RecordNumber = -1;
+bool CreateDemoReference = false;
 
 std::ofstream DemoRecording;
-std::deque<demoMsg> Demo_Message_Queue;
+std::deque<DemoMsg> Demo_Message_Queue;
 uint32_t DemoModeLastTick = 0;
 
 int LogicTick = 0;
 int StartTime = 0;
 
-int DemoGraphicsWidth = 640;
-int DemoGraphicsHeight = 480;
+uint16_t DemoGraphicsWidth = 640;
+uint16_t DemoGraphicsHeight = 480;
 
-void PumpDemoMessage(DemoMsgType demoMsgType, uint32_t message, int32_t wParam, int32_t lParam, float progressToNextGameTick)
+void PumpDemoMessage(DemoMsgType demoMsgType, uint32_t message, uint32_t wParam, uint16_t lParam, float progressToNextGameTick)
 {
-	demoMsg msg;
-	msg.type = demoMsgType;
-	msg.message = message;
-	msg.wParam = wParam;
-	msg.lParam = lParam;
-	msg.progressToNextGameTick = progressToNextGameTick;
-
-	Demo_Message_Queue.push_back(msg);
+	Demo_Message_Queue.push_back(DemoMsg { demoMsgType, message, wParam, lParam, progressToNextGameTick });
 }
 
 bool LoadDemoMessages(int i)
 {
 	std::ifstream demofile;
-	char demoFilename[16];
-	snprintf(demoFilename, 15, "demo_%d.dmo", i);
-	demofile.open(paths::PrefPath() + demoFilename);
+	demofile.open(StrCat(paths::PrefPath(), "demo_", i, ".dmo"), std::fstream::binary);
 	if (!demofile.is_open()) {
 		return false;
 	}
 
-	std::string line;
-	std::getline(demofile, line);
-	std::stringstream header(line);
-
-	std::string number;
-	std::getline(header, number, ','); // Demo version
-	if (std::stoi(number) != 0) {
+	const uint8_t version = ReadByte(demofile);
+	if (version != 0) {
 		return false;
 	}
 
-	std::getline(header, number, ',');
-	gSaveNumber = std::stoi(number);
+	gSaveNumber = ReadLE32(demofile);
+	DemoGraphicsWidth = ReadLE16(demofile);
+	DemoGraphicsHeight = ReadLE16(demofile);
 
-	std::getline(header, number, ',');
-	DemoGraphicsWidth = std::stoi(number);
+	while (!demofile.eof()) {
+		const uint32_t typeNum = ReadLE32(demofile);
+		const auto type = static_cast<DemoMsgType>(typeNum);
 
-	std::getline(header, number, ',');
-	DemoGraphicsHeight = std::stoi(number);
-
-	while (std::getline(demofile, line)) {
-		std::stringstream command(line);
-
-		std::getline(command, number, ',');
-		int typeNum = std::stoi(number);
-		auto type = static_cast<DemoMsgType>(typeNum);
-
-		std::getline(command, number, ',');
-		float progressToNextGameTick = std::stof(number);
+		const float progressToNextGameTick = ReadLEFloat(demofile);
 
 		switch (type) {
 		case DemoMsgType::Message: {
-			std::getline(command, number, ',');
-			uint32_t message = std::stoi(number);
-			std::getline(command, number, ',');
-			int32_t wParam = std::stoi(number);
-			std::getline(command, number, ',');
-			int32_t lParam = std::stoi(number);
+			const uint32_t message = ReadLE32(demofile);
+			const uint32_t wParam = ReadLE32(demofile);
+			const uint16_t lParam = ReadLE16(demofile);
 			PumpDemoMessage(type, message, wParam, lParam, progressToNextGameTick);
 			break;
 		}
@@ -126,15 +105,17 @@ void InitPlayBack(int demoNumber, bool timedemo)
 {
 	DemoNumber = demoNumber;
 	Timedemo = timedemo;
+	ControlMode = ControlTypes::KeyboardAndMouse;
 
 	if (!LoadDemoMessages(demoNumber)) {
 		SDL_Log("Unable to load demo file");
 		diablo_quit(1);
 	}
 }
-void InitRecording(int recordNumber)
+void InitRecording(int recordNumber, bool createDemoReference)
 {
 	RecordNumber = recordNumber;
+	CreateDemoReference = createDemoReference;
 }
 void OverrideOptions()
 {
@@ -166,12 +147,12 @@ bool GetRunGameLoop(bool &drawGame, bool &processInput)
 {
 	if (Demo_Message_Queue.empty())
 		app_fatal("Demo queue empty");
-	demoMsg dmsg = Demo_Message_Queue.front();
+	const DemoMsg dmsg = Demo_Message_Queue.front();
 	if (dmsg.type == DemoMsgType::Message)
 		app_fatal("Unexpected Message");
 	if (Timedemo) {
 		// disable additonal rendering to speedup replay
-		drawGame = dmsg.type == DemoMsgType::GameTick;
+		drawGame = dmsg.type == DemoMsgType::GameTick && !HeadlessMode;
 	} else {
 		int currentTickCount = SDL_GetTicks();
 		int ticksElapsed = currentTickCount - DemoModeLastTick;
@@ -205,8 +186,8 @@ bool FetchMessage(tagMSG *lpMsg)
 	if (SDL_PollEvent(&e) != 0) {
 		if (e.type == SDL_QUIT) {
 			lpMsg->message = DVL_WM_QUIT;
-			lpMsg->lParam = 0;
 			lpMsg->wParam = 0;
+			lpMsg->lParam = 0;
 			return true;
 		}
 		if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE) {
@@ -216,12 +197,12 @@ bool FetchMessage(tagMSG *lpMsg)
 			Timedemo = false;
 			last_tick = SDL_GetTicks();
 		}
-		if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_KP_PLUS && sgGameInitInfo.nTickRate < 255) {
+		if (e.type == SDL_KEYDOWN && IsAnyOf(e.key.keysym.sym, SDLK_KP_PLUS, SDLK_PLUS) && sgGameInitInfo.nTickRate < 255) {
 			sgGameInitInfo.nTickRate++;
 			sgOptions.Gameplay.tickRate.SetValue(sgGameInitInfo.nTickRate);
 			gnTickDelay = 1000 / sgGameInitInfo.nTickRate;
 		}
-		if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_KP_MINUS && sgGameInitInfo.nTickRate > 1) {
+		if (e.type == SDL_KEYDOWN && IsAnyOf(e.key.keysym.sym, SDLK_KP_MINUS, SDLK_MINUS) && sgGameInitInfo.nTickRate > 1) {
 			sgGameInitInfo.nTickRate--;
 			sgOptions.Gameplay.tickRate.SetValue(sgGameInitInfo.nTickRate);
 			gnTickDelay = 1000 / sgGameInitInfo.nTickRate;
@@ -229,11 +210,11 @@ bool FetchMessage(tagMSG *lpMsg)
 	}
 
 	if (!Demo_Message_Queue.empty()) {
-		demoMsg dmsg = Demo_Message_Queue.front();
+		const DemoMsg dmsg = Demo_Message_Queue.front();
 		if (dmsg.type == DemoMsgType::Message) {
 			lpMsg->message = dmsg.message;
-			lpMsg->lParam = dmsg.lParam;
 			lpMsg->wParam = dmsg.wParam;
+			lpMsg->lParam = dmsg.lParam;
 			gfProgressToNextGameTick = dmsg.progressToNextGameTick;
 			Demo_Message_Queue.pop_front();
 			return true;
@@ -241,31 +222,38 @@ bool FetchMessage(tagMSG *lpMsg)
 	}
 
 	lpMsg->message = 0;
-	lpMsg->lParam = 0;
 	lpMsg->wParam = 0;
+	lpMsg->lParam = 0;
 
 	return false;
 }
 
 void RecordGameLoopResult(bool runGameLoop)
 {
-	DemoRecording << static_cast<uint32_t>(runGameLoop ? DemoMsgType::GameTick : DemoMsgType::Rendering) << "," << gfProgressToNextGameTick << "\n";
+	WriteLE32(DemoRecording, static_cast<uint32_t>(runGameLoop ? DemoMsgType::GameTick : DemoMsgType::Rendering));
+	WriteLEFloat(DemoRecording, gfProgressToNextGameTick);
 }
 
 void RecordMessage(tagMSG *lpMsg)
 {
 	if (!gbRunGame || !DemoRecording.is_open())
 		return;
-	DemoRecording << static_cast<uint32_t>(DemoMsgType::Message) << "," << gfProgressToNextGameTick << "," << lpMsg->message << "," << lpMsg->wParam << "," << lpMsg->lParam << "\n";
+	WriteLE32(DemoRecording, static_cast<uint32_t>(DemoMsgType::Message));
+	WriteLEFloat(DemoRecording, gfProgressToNextGameTick);
+	WriteLE32(DemoRecording, lpMsg->message);
+	WriteLE32(DemoRecording, lpMsg->wParam);
+	WriteLE16(DemoRecording, lpMsg->lParam);
 }
 
 void NotifyGameLoopStart()
 {
 	if (IsRecording()) {
-		char demoFilename[16];
-		snprintf(demoFilename, 15, "demo_%d.dmo", RecordNumber);
-		DemoRecording.open(paths::PrefPath() + demoFilename, std::fstream::trunc);
-		DemoRecording << "0," << gSaveNumber << "," << gnScreenWidth << "," << gnScreenHeight << "\n";
+		DemoRecording.open(StrCat(paths::PrefPath(), "demo_", RecordNumber, ".dmo"), std::fstream::trunc | std::fstream::binary);
+		constexpr uint8_t Version = 0;
+		WriteByte(DemoRecording, Version);
+		WriteLE32(DemoRecording, gSaveNumber);
+		WriteLE16(DemoRecording, gnScreenWidth);
+		WriteLE16(DemoRecording, gnScreenHeight);
 	}
 
 	if (IsRunning()) {
@@ -278,15 +266,31 @@ void NotifyGameLoopEnd()
 {
 	if (IsRecording()) {
 		DemoRecording.close();
+		if (CreateDemoReference)
+			pfile_write_hero_demo(RecordNumber);
 
 		RecordNumber = -1;
+		CreateDemoReference = false;
 	}
 
-	if (IsRunning()) {
-		float secounds = (SDL_GetTicks() - StartTime) / 1000.0;
-		SDL_Log("%d frames, %.2f seconds: %.1f fps", LogicTick, secounds, LogicTick / secounds);
+	if (IsRunning() && !HeadlessMode) {
+		float seconds = (SDL_GetTicks() - StartTime) / 1000.0f;
+		SDL_Log("%d frames, %.2f seconds: %.1f fps", LogicTick, seconds, LogicTick / seconds);
 		gbRunGameResult = false;
 		gbRunGame = false;
+
+		HeroCompareResult compareResult = pfile_compare_hero_demo(DemoNumber);
+		switch (compareResult) {
+		case HeroCompareResult::ReferenceNotFound:
+			SDL_Log("Timedemo: No final comparision cause reference is not present.");
+			break;
+		case HeroCompareResult::Same:
+			SDL_Log("Timedemo: Same outcome as inital run. :)");
+			break;
+		case HeroCompareResult::Difference:
+			SDL_Log("Timedemo: Different outcome then inital run. ;(");
+			break;
+		}
 	}
 }
 

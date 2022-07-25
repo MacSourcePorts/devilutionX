@@ -9,12 +9,11 @@
 
 #include "control.h"
 #include "engine/load_file.hpp"
+#include "engine/palette.h"
 #include "engine/render/automap_render.hpp"
-#include "inv.h"
-#include "monster.h"
-#include "palette.h"
+#include "levels/gendung.h"
+#include "levels/setmaps.h"
 #include "player.h"
-#include "setmaps.h"
 #include "utils/language.h"
 #include "utils/stdcompat/algorithm.hpp"
 #include "utils/ui_fwd.h"
@@ -346,11 +345,11 @@ void DrawAutomapTile(const Surface &out, Point center, Point map)
 
 void SearchAutomapItem(const Surface &out, const Displacement &myPlayerOffset)
 {
-	auto &myPlayer = Players[MyPlayerId];
-	Point tile = myPlayer.position.tile;
-	if (myPlayer._pmode == PM_WALK3) {
-		tile = myPlayer.position.future;
-		if (myPlayer._pdir == Direction::West)
+	const Player &player = *MyPlayer;
+	Point tile = player.position.tile;
+	if (player._pmode == PM_WALK_SIDEWAYS) {
+		tile = player.position.future;
+		if (player._pdir == Direction::West)
 			tile.x++;
 		else
 			tile.y++;
@@ -372,13 +371,13 @@ void SearchAutomapItem(const Surface &out, const Displacement &myPlayerOffset)
 
 			Point screen = {
 				(myPlayerOffset.deltaX * AutoMapScale / 100 / 2) + (px - py) * AmLine16 + gnScreenWidth / 2,
-				(myPlayerOffset.deltaY * AutoMapScale / 100 / 2) + (px + py) * AmLine8 + (gnScreenHeight - PANEL_HEIGHT) / 2
+				(myPlayerOffset.deltaY * AutoMapScale / 100 / 2) + (px + py) * AmLine8 + (gnScreenHeight - GetMainPanel().size.height) / 2
 			};
 
 			if (CanPanelsCoverView()) {
-				if (invflag || sbookflag)
+				if (IsRightPanelOpen())
 					screen.x -= 160;
-				if (chrflag || QuestLogIsOpen)
+				if (IsLeftPanelOpen())
 					screen.x += 160;
 			}
 			screen.y -= AmLine8;
@@ -394,9 +393,9 @@ void DrawAutomapPlr(const Surface &out, const Displacement &myPlayerOffset, int 
 {
 	int playerColor = MapColorsPlayer + (8 * playerId) % 128;
 
-	auto &player = Players[playerId];
+	Player &player = Players[playerId];
 	Point tile = player.position.tile;
-	if (player._pmode == PM_WALK3) {
+	if (player._pmode == PM_WALK_SIDEWAYS) {
 		tile = player.position.future;
 	}
 
@@ -409,13 +408,13 @@ void DrawAutomapPlr(const Surface &out, const Displacement &myPlayerOffset, int 
 
 	Point base = {
 		((playerOffset.deltaX + myPlayerOffset.deltaX) * AutoMapScale / 100 / 2) + (px - py) * AmLine16 + gnScreenWidth / 2,
-		((playerOffset.deltaY + myPlayerOffset.deltaY) * AutoMapScale / 100 / 2) + (px + py) * AmLine8 + (gnScreenHeight - PANEL_HEIGHT) / 2
+		((playerOffset.deltaY + myPlayerOffset.deltaY) * AutoMapScale / 100 / 2) + (px + py) * AmLine8 + (gnScreenHeight - GetMainPanel().size.height) / 2
 	};
 
 	if (CanPanelsCoverView()) {
-		if (invflag || sbookflag)
+		if (IsRightPanelOpen())
 			base.x -= gnScreenWidth / 4;
-		if (chrflag || QuestLogIsOpen)
+		if (IsLeftPanelOpen())
 			base.x += gnScreenWidth / 4;
 	}
 	base.y -= AmLine16;
@@ -480,19 +479,19 @@ void DrawAutomapText(const Surface &out)
 	Point linePosition { 8, 8 };
 
 	if (gbIsMultiplayer) {
-		if (strcasecmp("0.0.0.0", szPlayerName) != 0) {
-			std::string description = _("Game: ");
-			description.append(szPlayerName);
+		if (GameName != "0.0.0.0") {
+			std::string description = std::string(_("Game: "));
+			description.append(GameName);
 			DrawString(out, description, linePosition);
 			linePosition.y += 15;
 		}
 
 		std::string description;
 		if (!PublicGame) {
-			description = _("Password: ");
-			description.append(szPlayerDescript);
+			description = std::string(_("Password: "));
+			description.append(GamePassword);
 		} else {
-			description = _("Public Game");
+			description = std::string(_("Public Game"));
 		}
 		DrawString(out, description, linePosition);
 		linePosition.y += 15;
@@ -503,14 +502,18 @@ void DrawAutomapText(const Surface &out)
 		return;
 	}
 
-	if (currlevel != 0) {
+	if (leveltype != DTYPE_TOWN) {
 		std::string description;
-		if (currlevel >= 17 && currlevel <= 20) {
-			description = fmt::format(_("Level: Nest {:d}"), currlevel - 16);
-		} else if (currlevel >= 21 && currlevel <= 24) {
-			description = fmt::format(_("Level: Crypt {:d}"), currlevel - 20);
-		} else {
-			description = fmt::format(_("Level: {:d}"), currlevel);
+		switch (leveltype) {
+		case DTYPE_NEST:
+			description = fmt::format(fmt::runtime(_("Level: Nest {:d}")), currlevel - 16);
+			break;
+		case DTYPE_CRYPT:
+			description = fmt::format(fmt::runtime(_("Level: Crypt {:d}")), currlevel - 20);
+			break;
+		default:
+			description = fmt::format(fmt::runtime(_("Level: {:d}")), currlevel);
+			break;
 		}
 
 		DrawString(out, description, linePosition);
@@ -529,7 +532,7 @@ void DrawAutomapText(const Surface &out)
 		break;
 	}
 
-	std::string description = fmt::format(_(/* TRANSLATORS: {:s} means: Game Difficulty. */ "Difficulty: {:s}"), difficulty);
+	std::string description = fmt::format(fmt::runtime(_(/* TRANSLATORS: {:s} means: Game Difficulty. */ "Difficulty: {:s}")), difficulty);
 	DrawString(out, description, linePosition);
 }
 
@@ -537,17 +540,17 @@ std::unique_ptr<AutomapTile[]> LoadAutomapData(size_t &tileCount)
 {
 	switch (leveltype) {
 	case DTYPE_CATHEDRAL:
-		if (currlevel < 21)
-			return LoadFileInMem<AutomapTile>("Levels\\L1Data\\L1.AMP", &tileCount);
-		return LoadFileInMem<AutomapTile>("NLevels\\L5Data\\L5.AMP", &tileCount);
+		return LoadFileInMem<AutomapTile>("Levels\\L1Data\\L1.AMP", &tileCount);
 	case DTYPE_CATACOMBS:
 		return LoadFileInMem<AutomapTile>("Levels\\L2Data\\L2.AMP", &tileCount);
 	case DTYPE_CAVES:
-		if (currlevel < 17)
-			return LoadFileInMem<AutomapTile>("Levels\\L3Data\\L3.AMP", &tileCount);
-		return LoadFileInMem<AutomapTile>("NLevels\\L6Data\\L6.AMP", &tileCount);
+		return LoadFileInMem<AutomapTile>("Levels\\L3Data\\L3.AMP", &tileCount);
 	case DTYPE_HELL:
 		return LoadFileInMem<AutomapTile>("Levels\\L4Data\\L4.AMP", &tileCount);
+	case DTYPE_NEST:
+		return LoadFileInMem<AutomapTile>("NLevels\\L6Data\\L6.AMP", &tileCount);
+	case DTYPE_CRYPT:
+		return LoadFileInMem<AutomapTile>("NLevels\\L5Data\\L5.AMP", &tileCount);
 	default:
 		return nullptr;
 	}
@@ -667,7 +670,7 @@ void DrawAutomap(const Surface &out)
 
 	Automap += AutomapOffset;
 
-	const auto &myPlayer = Players[MyPlayerId];
+	const Player &myPlayer = *MyPlayer;
 	Displacement myPlayerOffset = ScrollInfo.offset;
 	if (myPlayer.IsWalking())
 		myPlayerOffset = GetOffsetForWalking(myPlayer.AnimInfo, myPlayer._pdir, true);
@@ -683,7 +686,7 @@ void DrawAutomap(const Surface &out)
 
 	Point screen {
 		gnScreenWidth / 2,
-		(gnScreenHeight - PANEL_HEIGHT) / 2
+		(gnScreenHeight - GetMainPanel().size.height) / 2
 	};
 	if ((cells & 1) != 0) {
 		screen.x -= AmLine64 * ((cells - 1) / 2);
@@ -705,10 +708,10 @@ void DrawAutomap(const Surface &out)
 	screen.y += AutoMapScale * myPlayerOffset.deltaY / 100 / 2;
 
 	if (CanPanelsCoverView()) {
-		if (invflag || sbookflag) {
+		if (IsRightPanelOpen()) {
 			screen.x -= gnScreenWidth / 4;
 		}
-		if (chrflag || QuestLogIsOpen) {
+		if (IsLeftPanelOpen()) {
 			screen.x += gnScreenWidth / 4;
 		}
 	}
@@ -733,8 +736,8 @@ void DrawAutomap(const Surface &out)
 	}
 
 	for (int playerId = 0; playerId < MAX_PLRS; playerId++) {
-		auto &player = Players[playerId];
-		if (player.plrlevel == myPlayer.plrlevel && player.plractive && !player._pLvlChanging) {
+		Player &player = Players[playerId];
+		if (player.isOnActiveLevel() && player.plractive && !player._pLvlChanging && (&player == MyPlayer || player.friendlyMode)) {
 			DrawAutomapPlr(out, myPlayerOffset, playerId);
 		}
 	}

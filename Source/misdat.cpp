@@ -15,7 +15,7 @@ namespace devilution {
 /** Data related to each missile ID. */
 MissileData MissilesData[] = {
 	// clang-format off
-	// mAddProc,                   mProc,              mName,             mDraw, mType, mResist,        mFileNum,        mlSFX,       miSFX,       MovementDistribution;
+	// mAddProc,                   mProc,              name,             mDraw, mType, mResist,        mFileNum,        mlSFX,       miSFX,       MovementDistribution;
 	{  &AddArrow,                  &MI_Arrow,          MIS_ARROW,         true,      0, MISR_NONE,      MFILE_ARROWS,    SFX_NONE,    SFX_NONE,    MissileMovementDistrubution::Blockable   },
 	{  &AddFirebolt,               &MI_Firebolt,       MIS_FIREBOLT,      true,      1, MISR_FIRE,      MFILE_FIREBA,    LS_FBOLT1,   LS_FIRIMP2,  MissileMovementDistrubution::Blockable   },
 	{  &AddGuardian,               &MI_Guardian,       MIS_GUARDIAN,      true,      1, MISR_NONE,      MFILE_GUARD,     LS_GUARD,    LS_GUARDLAN, MissileMovementDistrubution::Disabled    },
@@ -248,6 +248,9 @@ void MissileFileData::LoadGFX()
 
 void InitMissileGFX(bool loadHellfireGraphics)
 {
+	if (HeadlessMode)
+		return;
+
 	for (size_t mi = 0; MissileSpriteData[mi].animFAmt != 0; mi++) {
 		if (!loadHellfireGraphics && mi > MFILE_SCBSEXPD)
 			break;

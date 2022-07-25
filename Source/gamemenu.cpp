@@ -6,13 +6,14 @@
 #include "gamemenu.h"
 
 #include "cursor.h"
+#include "engine/sound.h"
+#include "engine/sound_defs.hpp"
 #include "error.h"
 #include "gmenu.h"
 #include "init.h"
 #include "loadsave.h"
 #include "options.h"
 #include "pfile.h"
-#include "sound.h"
 #include "utils/language.h"
 
 namespace devilution {
@@ -77,7 +78,7 @@ void GamemenuUpdateSingle()
 {
 	gmenu_enable(&sgSingleMenu[3], gbValidSaveFile);
 
-	bool enable = Players[MyPlayerId]._pmode != PM_DEATH && !MyPlayerIsDead;
+	bool enable = MyPlayer->_pmode != PM_DEATH && !MyPlayerIsDead;
 
 	gmenu_enable(&sgSingleMenu[0], enable);
 }
@@ -94,14 +95,16 @@ void GamemenuPrevious(bool /*bActivate*/)
 
 void GamemenuNewGame(bool /*bActivate*/)
 {
-	for (auto &player : Players) {
+	for (Player &player : Players) {
 		player._pmode = PM_QUIT;
 		player._pInvincible = true;
 	}
 
 	MyPlayerIsDead = false;
-	force_redraw = 255;
-	scrollrt_draw_game_screen();
+	if (!HeadlessMode) {
+		force_redraw = 255;
+		scrollrt_draw_game_screen();
+	}
 	CornerStone.activated = false;
 	gbRunGame = false;
 	gamemenu_off();
@@ -152,19 +155,19 @@ void GamemenuGetSpeed()
 	if (gbIsMultiplayer) {
 		sgOptionsMenu[3].dwFlags &= ~(GMENU_ENABLED | GMENU_SLIDER);
 		if (sgGameInitInfo.nTickRate >= 50)
-			sgOptionsMenu[3].pszStr = _("Speed: Fastest").c_str();
+			sgOptionsMenu[3].pszStr = _("Speed: Fastest").data();
 		else if (sgGameInitInfo.nTickRate >= 40)
-			sgOptionsMenu[3].pszStr = _("Speed: Faster").c_str();
+			sgOptionsMenu[3].pszStr = _("Speed: Faster").data();
 		else if (sgGameInitInfo.nTickRate >= 30)
-			sgOptionsMenu[3].pszStr = _("Speed: Fast").c_str();
+			sgOptionsMenu[3].pszStr = _("Speed: Fast").data();
 		else if (sgGameInitInfo.nTickRate == 20)
-			sgOptionsMenu[3].pszStr = _("Speed: Normal").c_str();
+			sgOptionsMenu[3].pszStr = _("Speed: Normal").data();
 		return;
 	}
 
 	sgOptionsMenu[3].dwFlags |= GMENU_ENABLED | GMENU_SLIDER;
 
-	sgOptionsMenu[3].pszStr = _("Speed").c_str();
+	sgOptionsMenu[3].pszStr = _("Speed").data();
 	gmenu_slider_steps(&sgOptionsMenu[3], 46);
 	gmenu_slider_set(&sgOptionsMenu[3], 20, 50, sgGameInitInfo.nTickRate);
 }
@@ -193,15 +196,7 @@ void GamemenuMusicVolume(bool bActivate)
 		} else {
 			gbMusicOn = true;
 			sound_get_or_set_music_volume(VOLUME_MAX);
-			int lt;
-			if (currlevel >= 17) {
-				if (currlevel > 20)
-					lt = TMUSIC_L5;
-				else
-					lt = TMUSIC_L6;
-			} else
-				lt = leveltype;
-			music_start(lt);
+			music_start(GetLevelMusic(leveltype));
 		}
 	} else {
 		int volume = GamemenuSliderMusicSound(&sgOptionsMenu[0]);
@@ -213,15 +208,7 @@ void GamemenuMusicVolume(bool bActivate)
 			}
 		} else if (!gbMusicOn) {
 			gbMusicOn = true;
-			int lt;
-			if (currlevel >= 17) {
-				if (currlevel > 20)
-					lt = TMUSIC_L5;
-				else
-					lt = TMUSIC_L6;
-			} else
-				lt = leveltype;
-			music_start(lt);
+			music_start(GetLevelMusic(leveltype));
 		}
 	}
 
@@ -302,7 +289,7 @@ void gamemenu_quit_game(bool bActivate)
 
 void gamemenu_load_game(bool /*bActivate*/)
 {
-	WNDPROC saveProc = SetWindowProc(DisableInputWndProc);
+	EventHandler saveProc = SetEventHandler(DisableInputEventHandler);
 	gamemenu_off();
 	NewCursor(CURSOR_NONE);
 	InitDiabloMsg(EMSG_LOADING);
@@ -319,7 +306,7 @@ void gamemenu_load_game(bool /*bActivate*/)
 	PaletteFadeIn(8);
 	NewCursor(CURSOR_HAND);
 	interface_msg_pump();
-	SetWindowProc(saveProc);
+	SetEventHandler(saveProc);
 }
 
 void gamemenu_save_game(bool /*bActivate*/)
@@ -328,12 +315,12 @@ void gamemenu_save_game(bool /*bActivate*/)
 		return;
 	}
 
-	if (Players[MyPlayerId]._pmode == PM_DEATH || MyPlayerIsDead) {
+	if (MyPlayer->_pmode == PM_DEATH || MyPlayerIsDead) {
 		gamemenu_off();
 		return;
 	}
 
-	WNDPROC saveProc = SetWindowProc(DisableInputWndProc);
+	EventHandler saveProc = SetEventHandler(DisableInputEventHandler);
 	NewCursor(CURSOR_NONE);
 	gamemenu_off();
 	InitDiabloMsg(EMSG_SAVING);
@@ -348,7 +335,7 @@ void gamemenu_save_game(bool /*bActivate*/)
 		SaveOptions();
 	}
 	interface_msg_pump();
-	SetWindowProc(saveProc);
+	SetEventHandler(saveProc);
 }
 
 void gamemenu_on()

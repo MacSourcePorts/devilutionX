@@ -7,6 +7,7 @@
 
 #include "DiabloUI/art.h"
 #include "DiabloUI/ui_flags.hpp"
+#include "engine/cel_sprite.hpp"
 #include "engine/render/text_render.hpp"
 #include "utils/enum_traits.h"
 #include "utils/stubs.h"
@@ -17,7 +18,8 @@ enum class UiType {
 	Text,
 	ArtText,
 	ArtTextButton,
-	Image,
+	ImageCl2,
+	ImageAnimatedCl2,
 	Button,
 	List,
 	Scrollbar,
@@ -87,46 +89,59 @@ private:
 };
 
 //=============================================================================
-
-class UiImage : public UiItemBase {
+class UiImageCl2 : public UiItemBase {
 public:
-	UiImage(Art *art, SDL_Rect rect, UiFlags flags = UiFlags::None, bool animated = false, int frame = 0)
-	    : UiItemBase(UiType::Image, rect, flags)
-	    , art_(art)
-	    , animated_(animated)
-	    , frame_(frame)
+	UiImageCl2(CelFrameWithHeight sprite, SDL_Rect rect, UiFlags flags = UiFlags::None)
+	    : UiItemBase(UiType::ImageCl2, rect, flags)
+	    , sprite_(sprite)
 	{
 	}
 
-	[[nodiscard]] bool IsCentered() const
+	[[nodiscard]] bool isCentered() const
 	{
 		return HasAnyOf(GetFlags(), UiFlags::AlignCenter);
 	}
 
-	[[nodiscard]] Art *GetArt() const
+	[[nodiscard]] CelFrameWithHeight sprite() const
 	{
-		return art_;
+		return sprite_;
 	}
 
-	[[nodiscard]] bool IsAnimated() const
+	void setSprite(CelFrameWithHeight sprite)
 	{
-		return animated_;
-	}
-
-	[[nodiscard]] int GetFrame() const
-	{
-		return frame_;
-	}
-
-	void SetFrame(int frame)
-	{
-		frame_ = frame;
+		sprite_ = sprite;
 	}
 
 private:
-	Art *art_;
-	bool animated_;
-	int frame_;
+	CelFrameWithHeight sprite_;
+};
+
+//=============================================================================
+class UiImageAnimatedCl2 : public UiItemBase {
+public:
+	UiImageAnimatedCl2(CelSpriteSheetWithFrameHeight sheet, SDL_Rect rect, UiFlags flags = UiFlags::None)
+	    : UiItemBase(UiType::ImageAnimatedCl2, rect, flags)
+	    , sheet_(sheet)
+	{
+	}
+
+	[[nodiscard]] bool isCentered() const
+	{
+		return HasAnyOf(GetFlags(), UiFlags::AlignCenter);
+	}
+
+	[[nodiscard]] CelFrameWithHeight sprite(uint16_t frame) const
+	{
+		return sheet_.sprite(frame);
+	}
+
+	[[nodiscard]] uint16_t numFrames() const
+	{
+		return sheet_.numFrames();
+	}
+
+private:
+	CelSpriteSheetWithFrameHeight sheet_;
 };
 
 //=============================================================================
@@ -138,6 +153,8 @@ public:
 	 * @param text Pointer to the first character of a c-string
 	 * @param rect screen region defining the area to draw the text
 	 * @param flags UiFlags controlling color/alignment/size
+	 * @param spacing Spacing between characters
+	 * @param lineHeight Vertical distance between text lines
 	 */
 	UiArtText(const char *text, SDL_Rect rect, UiFlags flags = UiFlags::None, int spacing = 1, int lineHeight = -1)
 	    : UiItemBase(UiType::ArtText, rect, flags)
@@ -152,6 +169,8 @@ public:
 	 * @param ptext Pointer to a c-string (pointer to a pointer to the first character)
 	 * @param rect screen region defining the area to draw the text
 	 * @param flags UiFlags controlling color/alignment/size
+	 * @param spacing Spacing between characters
+	 * @param lineHeight Vertical distance between text lines
 	 */
 	UiArtText(const char **ptext, SDL_Rect rect, UiFlags flags = UiFlags::None, int spacing = 1, int lineHeight = -1)
 	    : UiItemBase(UiType::ArtText, rect, flags)
@@ -189,7 +208,7 @@ private:
 
 class UiScrollbar : public UiItemBase {
 public:
-	UiScrollbar(Art *bg, Art *thumb, Art *arrow, SDL_Rect rect, UiFlags flags = UiFlags::None)
+	UiScrollbar(CelFrameWithHeight bg, CelFrameWithHeight thumb, CelSpriteSheetWithFrameHeight arrow, SDL_Rect rect, UiFlags flags = UiFlags::None)
 	    : UiItemBase(UiType::Scrollbar, rect, flags)
 	    , m_bg(bg)
 	    , m_thumb(thumb)
@@ -198,9 +217,9 @@ public:
 	}
 
 	// private:
-	Art *m_bg;
-	Art *m_thumb;
-	Art *m_arrow;
+	CelFrameWithHeight m_bg;
+	CelFrameWithHeight m_thumb;
+	CelSpriteSheetWithFrameHeight m_arrow;
 };
 
 //=============================================================================
@@ -285,24 +304,12 @@ class UiButton : public UiItemBase {
 public:
 	using Callback = void (*)();
 
-	UiButton(Art *art, string_view text, Callback action, SDL_Rect rect, UiFlags flags = UiFlags::None)
+	UiButton(string_view text, Callback action, SDL_Rect rect, UiFlags flags = UiFlags::None)
 	    : UiItemBase(UiType::Button, rect, flags)
-	    , art_(art)
 	    , text_(text)
 	    , action_(action)
 	    , pressed_(false)
 	{
-	}
-
-	[[nodiscard]] int GetFrame() const
-	{
-		// Frame 1 is a held button sprite, frame 0 is the default
-		return IsPressed() ? 1 : 0;
-	}
-
-	[[nodiscard]] Art *GetArt() const
-	{
-		return art_;
 	}
 
 	[[nodiscard]] string_view GetText() const
@@ -331,8 +338,6 @@ public:
 	}
 
 private:
-	Art *art_;
-
 	string_view text_;
 	Callback action_;
 
@@ -370,19 +375,9 @@ class UiList : public UiItemBase {
 public:
 	using vUiListItem = std::vector<std::unique_ptr<UiListItem>>;
 
-	UiList(const vUiListItem &vItems, size_t viewportSize, Sint16 x, Sint16 y, Uint16 item_width, Uint16 item_height, UiFlags flags = UiFlags::None, int spacing = 1)
-	    : UiItemBase(UiType::List, { x, y, item_width, static_cast<Uint16>(item_height * viewportSize) }, flags)
-	    , viewportSize(viewportSize)
-	    , m_x(x)
-	    , m_y(y)
-	    , m_width(item_width)
-	    , m_height(item_height)
-	    , spacing_(spacing)
+	UiList(const vUiListItem &vItems, size_t viewportMaxSize, Sint16 x, Sint16 y, Uint16 item_width, Uint16 item_height, UiFlags flags = UiFlags::None, int spacing = 1)
+	    : UiList(PrivateConstructor {}, vItems, std::min<size_t>(viewportMaxSize, vItems.size()), x, y, item_width, item_height, flags, spacing)
 	{
-		for (const auto &item : vItems)
-			m_vecItems.push_back(item.get());
-
-		pressed_item_index_ = -1;
 	}
 
 	[[nodiscard]] SDL_Rect itemRect(int i) const
@@ -436,6 +431,24 @@ public:
 	std::vector<UiListItem *> m_vecItems;
 
 private:
+	struct PrivateConstructor final {
+	};
+
+	UiList(PrivateConstructor tag, const vUiListItem &vItems, size_t viewportSize, Sint16 x, Sint16 y, Uint16 item_width, Uint16 item_height, UiFlags flags, int spacing)
+	    : UiItemBase(UiType::List, { x, y, item_width, static_cast<Uint16>(item_height * viewportSize) }, flags)
+	    , viewportSize(viewportSize)
+	    , m_x(x)
+	    , m_y(y)
+	    , m_width(item_width)
+	    , m_height(item_height)
+	    , spacing_(spacing)
+	{
+		for (const auto &item : vItems)
+			m_vecItems.push_back(item.get());
+
+		pressed_item_index_ = -1;
+	}
+
 	int spacing_;
 
 	// State

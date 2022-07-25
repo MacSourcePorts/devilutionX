@@ -4,13 +4,14 @@
 
 #include "DiabloUI/button.h"
 #include "DiabloUI/diabloui.h"
-#include "DiabloUI/errorart.h"
 #include "control.h"
 #include "controls/input.h"
 #include "controls/menu_controls.h"
-#include "dx.h"
+#include "engine/cel_sprite.hpp"
+#include "engine/dx.h"
+#include "engine/load_pcx.hpp"
+#include "engine/palette.h"
 #include "hwcursor.hpp"
-#include "palette.h"
 #include "utils/display.h"
 #include "utils/language.h"
 #include "utils/log.hpp"
@@ -20,7 +21,7 @@ namespace devilution {
 
 namespace {
 
-Art dialogArt;
+std::optional<OwnedCelSpriteWithFrameHeight> dialogPcx;
 std::string wrappedText;
 
 bool dialogEnd;
@@ -33,188 +34,74 @@ void DialogActionOK()
 std::vector<std::unique_ptr<UiItemBase>> vecNULL;
 std::vector<std::unique_ptr<UiItemBase>> vecOkDialog;
 
-// clang-format off
-#define BLANKCOLOR { 0, 0xFF, 0, 0 }
-// clang-format on
-
-void LoadFallbackPalette()
+std::optional<CelFrameWithHeight> LoadDialogSprite(bool hasCaption, bool isError)
 {
-	// clang-format off
-	static const SDL_Color FallbackPalette[256] = {
-		{ 0x00, 0x00, 0x00, 0 },
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR,
-		{ 0xff, 0xfd, 0x9f, 0 },
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		{ 0xe8, 0xca, 0xca, 0 },
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		{ 0x05, 0x07, 0x0c, 0 },
-		{ 0xff, 0xe3, 0xa4, 0 },
-		{ 0xee, 0xd1, 0x8c, 0 },
-		{ 0xdd, 0xc4, 0x7e, 0 },
-		{ 0xcc, 0xb7, 0x75, 0 },
-		{ 0xbc, 0xa8, 0x6c, 0 },
-		{ 0xab, 0x9a, 0x63, 0 },
-		{ 0x98, 0x8b, 0x5d, 0 },
-		{ 0x87, 0x7e, 0x54, 0 },
-		{ 0x78, 0x6f, 0x49, 0 },
-		{ 0x69, 0x60, 0x3f, 0 },
-		{ 0x5b, 0x51, 0x34, 0 },
-		{ 0x48, 0x40, 0x27, 0 },
-		{ 0x39, 0x31, 0x1d, 0 },
-		{ 0x31, 0x28, 0x16, 0 },
-		{ 0x1a, 0x14, 0x08, 0 },
-		{ 0x14, 0x0b, 0x00, 0 },
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR,
-		{ 0xff, 0xbd, 0xbd, 0 },
-		{ 0xf4, 0x96, 0x96, 0 },
-		{ 0xe8, 0x7d, 0x7d, 0 },
-		{ 0xe0, 0x6c, 0x6c, 0 },
-		{ 0xd8, 0x5b, 0x5b, 0 },
-		{ 0xcf, 0x49, 0x49, 0 },
-		{ 0xc7, 0x38, 0x38, 0 },
-		{ 0xbf, 0x27, 0x27, 0 },
-		{ 0xa9, 0x22, 0x22, 0 },
-		{ 0x93, 0x1e, 0x1e, 0 },
-		{ 0x7c, 0x19, 0x19, 0 },
-		{ 0x66, 0x15, 0x15, 0 },
-		{ 0x4f, 0x11, 0x11, 0 },
-		{ 0x39, 0x0d, 0x0d, 0 },
-		{ 0x23, 0x09, 0x09, 0 },
-		{ 0x0c, 0x05, 0x05, 0 },
-		{ 0xf3, 0xf3, 0xf3, 0 },
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR, BLANKCOLOR,
-		{ 0xff, 0xff, 0x00, 0 },
-		BLANKCOLOR, BLANKCOLOR, BLANKCOLOR,
-		BLANKCOLOR,
-	};
-	// clang-format on
-	ApplyGamma(logical_palette, FallbackPalette, 256);
-	BlackPalette();
+	constexpr uint8_t TransparentColor = 255;
+	if (!hasCaption) {
+		dialogPcx = LoadPcxAsCl2(isError ? "ui_art\\srpopup.pcx" : "ui_art\\spopup.pcx", TransparentColor);
+	} else if (isError) {
+		dialogPcx = LoadPcxAsCl2("ui_art\\dvl_lrpopup.pcx");
+		if (dialogPcx == std::nullopt) {
+			dialogPcx = LoadPcxAsCl2("ui_art\\lrpopup.pcx", /*transparentColor=*/255);
+		}
+	} else {
+		dialogPcx = LoadPcxAsCl2("ui_art\\lpopup.pcx", TransparentColor);
+	}
+	if (!dialogPcx)
+		return std::nullopt;
+	return dialogPcx->sprite();
 }
 
-void Init(string_view caption, string_view text, bool error, bool renderBehind)
+bool Init(string_view caption, string_view text, bool error, bool renderBehind)
 {
 	if (!renderBehind) {
-		ArtBackground.Unload();
-		LoadBackgroundArt("ui_art\\black.pcx");
-		if (ArtBackground.surface == nullptr) {
-			LoadFallbackPalette();
+		if (!UiLoadBlackBackground()) {
 			if (SDL_ShowCursor(SDL_ENABLE) <= -1)
-				Log("{}", SDL_GetError());
+				LogError("{}", SDL_GetError());
 		}
 	}
+	LoadDialogButtonGraphics();
 
-	if (caption.empty()) {
-		LoadMaskedArt(error ? "ui_art\\srpopup.pcx" : "ui_art\\spopup.pcx", &dialogArt);
-	} else if (error) {
-		LoadArt(&dialogArt, PopupData, 385, 280);
-	} else {
-		LoadMaskedArt("ui_art\\lpopup.pcx", &dialogArt);
-	}
-	LoadSmlButtonArt();
+	std::optional<CelFrameWithHeight> dialogSprite = LoadDialogSprite(!caption.empty(), error);
+	if (!dialogSprite)
+		return false;
 
-	const int textWidth = dialogArt.w() - 40;
+	const int dialogWidth = dialogSprite->width();
+	const int textWidth = dialogWidth - 40;
 
 	wrappedText = WordWrapString(text, textWidth, FontSizeDialog);
 
+	const Point uiPosition = GetUIRectangle().position;
 	if (caption.empty()) {
-		SDL_Rect rect1 = MakeSdlRect(PANEL_LEFT + 180, UI_OFFSET_Y + 168, dialogArt.w(), dialogArt.h());
-		vecOkDialog.push_back(std::make_unique<UiImage>(&dialogArt, rect1));
-
-		SDL_Rect rect2 = MakeSdlRect(PANEL_LEFT + 200, UI_OFFSET_Y + 211, textWidth, 80);
+		SDL_Rect rect1 = MakeSdlRect(uiPosition.x + 180, uiPosition.y + 168, dialogSprite->width(), dialogSprite->height());
+		vecOkDialog.push_back(std::make_unique<UiImageCl2>(*dialogSprite, rect1));
+		SDL_Rect rect2 = MakeSdlRect(uiPosition.x + 200, uiPosition.y + 211, textWidth, 80);
 		vecOkDialog.push_back(std::make_unique<UiText>(wrappedText, rect2, UiFlags::AlignCenter | UiFlags::ColorDialogWhite));
 
-		SDL_Rect rect3 = MakeSdlRect(PANEL_LEFT + 265, UI_OFFSET_Y + 265, SML_BUTTON_WIDTH, SML_BUTTON_HEIGHT);
-		vecOkDialog.push_back(std::make_unique<UiButton>(&SmlButton, _("OK"), &DialogActionOK, rect3));
+		SDL_Rect rect3 = MakeSdlRect(uiPosition.x + 265, uiPosition.y + 265, DialogButtonWidth, DialogButtonHeight);
+		vecOkDialog.push_back(std::make_unique<UiButton>(_("OK"), &DialogActionOK, rect3));
 	} else {
-		SDL_Rect rect1 = MakeSdlRect(PANEL_LEFT + 127, UI_OFFSET_Y + 100, dialogArt.w(), dialogArt.h());
-		vecOkDialog.push_back(std::make_unique<UiImage>(&dialogArt, rect1));
+		SDL_Rect rect1 = MakeSdlRect(uiPosition.x + 127, uiPosition.y + 100, dialogSprite->width(), dialogSprite->height());
+		vecOkDialog.push_back(std::make_unique<UiImageCl2>(*dialogSprite, rect1));
 
-		SDL_Rect rect2 = MakeSdlRect(PANEL_LEFT + 147, UI_OFFSET_Y + 110, textWidth, 20);
+		SDL_Rect rect2 = MakeSdlRect(uiPosition.x + 147, uiPosition.y + 110, textWidth, 20);
 		vecOkDialog.push_back(std::make_unique<UiText>(caption, rect2, UiFlags::AlignCenter | UiFlags::ColorDialogYellow));
 
-		SDL_Rect rect3 = MakeSdlRect(PANEL_LEFT + 147, UI_OFFSET_Y + 141, textWidth, 190);
+		SDL_Rect rect3 = MakeSdlRect(uiPosition.x + 147, uiPosition.y + 141, textWidth, 190);
 		vecOkDialog.push_back(std::make_unique<UiText>(wrappedText, rect3, UiFlags::AlignCenter | UiFlags::ColorDialogWhite));
 
-		SDL_Rect rect4 = MakeSdlRect(PANEL_LEFT + 264, UI_OFFSET_Y + 335, SML_BUTTON_WIDTH, SML_BUTTON_HEIGHT);
-		vecOkDialog.push_back(std::make_unique<UiButton>(&SmlButton, _("OK"), &DialogActionOK, rect4));
+		SDL_Rect rect4 = MakeSdlRect(uiPosition.x + 264, uiPosition.y + 335, DialogButtonWidth, DialogButtonHeight);
+		vecOkDialog.push_back(std::make_unique<UiButton>(_("OK"), &DialogActionOK, rect4));
 	}
+	return true;
 }
 
 void Deinit()
 {
-	dialogArt.Unload();
-	UnloadSmlButtonArt();
+	dialogPcx = std::nullopt;
 	vecOkDialog.clear();
-	ArtBackground.Unload();
+	ArtBackground = std::nullopt;
+	FreeDialogButtonGraphics();
 }
 
 void DialogLoop(const std::vector<std::unique_ptr<UiItemBase>> &items, const std::vector<std::unique_ptr<UiItemBase>> &renderBehind)
@@ -248,29 +135,31 @@ void DialogLoop(const std::vector<std::unique_ptr<UiItemBase>> &items, const std
 			UiRenderItems(renderBehind);
 		}
 		UiRenderItems(items);
-		if (ArtBackground.surface != nullptr) {
+		if (ArtBackground) {
 			DrawMouse();
 		}
 		UiFadeIn();
 	} while (!dialogEnd);
 }
 
-void UiOkDialog(const char *caption, const char *text, bool error, const std::vector<std::unique_ptr<UiItemBase>> &renderBehind)
+void UiOkDialog(string_view caption, string_view text, bool error, const std::vector<std::unique_ptr<UiItemBase>> &renderBehind)
 {
 	static bool inDialog = false;
 
-	if (caption != nullptr) {
+	if (!caption.empty()) {
 		LogError("{}\n{}", caption, text);
 	} else {
 		LogError("{}", text);
 	}
 
 	if (!gbActive || inDialog) {
-		if (!gbQuietMode) {
+		if (!HeadlessMode) {
 			if (SDL_ShowCursor(SDL_ENABLE) <= -1)
-				Log("{}", SDL_GetError());
-			if (SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, caption, text, nullptr) <= -1) {
-				Log("{}", SDL_GetError());
+				LogError("{}", SDL_GetError());
+			std::string captionStr = std::string(caption);
+			std::string textStr = std::string(caption);
+			if (SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, captionStr.c_str(), textStr.c_str(), nullptr) <= -1) {
+				LogError("{}", SDL_GetError());
 			}
 		}
 		return;
@@ -278,12 +167,20 @@ void UiOkDialog(const char *caption, const char *text, bool error, const std::ve
 
 	if (IsHardwareCursor()) {
 		if (SDL_ShowCursor(SDL_ENABLE) <= -1)
-			Log("{}", SDL_GetError());
+			LogError("{}", SDL_GetError());
+	}
+
+	if (!Init(caption, text, error, !renderBehind.empty())) {
+		LogError("{}\n{}", caption, text);
+		std::string captionStr = std::string(caption);
+		std::string textStr = std::string(caption);
+		if (SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, captionStr.c_str(), textStr.c_str(), nullptr) <= -1) {
+			LogError("{}", SDL_GetError());
+		}
 	}
 
 	inDialog = true;
 	SDL_SetClipRect(DiabloUiSurface(), nullptr);
-	Init(caption, text, error, !renderBehind.empty());
 	DialogLoop(vecOkDialog, renderBehind);
 	Deinit();
 	inDialog = false;
@@ -291,19 +188,19 @@ void UiOkDialog(const char *caption, const char *text, bool error, const std::ve
 
 } // namespace
 
-void UiErrorOkDialog(const char *caption, const char *text, const std::vector<std::unique_ptr<UiItemBase>> &renderBehind)
+void UiErrorOkDialog(string_view caption, string_view text, const std::vector<std::unique_ptr<UiItemBase>> &renderBehind)
 {
 	UiOkDialog(caption, text, /*error=*/true, renderBehind);
 }
 
-void UiErrorOkDialog(const char *caption, const char *text, bool error)
+void UiErrorOkDialog(string_view caption, string_view text, bool error)
 {
 	UiOkDialog(caption, text, error, vecNULL);
 }
 
-void UiErrorOkDialog(const char *text, const std::vector<std::unique_ptr<UiItemBase>> &renderBehind)
+void UiErrorOkDialog(string_view text, const std::vector<std::unique_ptr<UiItemBase>> &renderBehind)
 {
-	UiErrorOkDialog(nullptr, text, renderBehind);
+	UiErrorOkDialog({}, text, renderBehind);
 }
 
 } // namespace devilution

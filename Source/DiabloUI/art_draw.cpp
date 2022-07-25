@@ -1,7 +1,7 @@
 #include "DiabloUI/art_draw.h"
 
 #include "DiabloUI/diabloui.h"
-#include "palette.h"
+#include "engine/palette.h"
 #include "utils/display.h"
 #include "utils/sdl_compat.h"
 
@@ -71,11 +71,6 @@ void DrawArt(const Surface &out, Point position, Art *art, int nFrame, Uint16 sr
 
 	if (SDL_BlitSurface(art->surface.get(), &srcRect, out.surface, &dstRect) < 0)
 		ErrSdl();
-}
-
-void DrawAnimatedArt(Art *art, Point screenPosition)
-{
-	DrawArt(screenPosition, art, GetAnimationFrame(art->frames));
 }
 
 int GetAnimationFrame(int frames, int fps)

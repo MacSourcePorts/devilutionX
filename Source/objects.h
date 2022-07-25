@@ -170,7 +170,15 @@ struct Object {
 	 */
 	[[nodiscard]] constexpr bool IsBarrel() const
 	{
-		return IsAnyOf(_otype, _object_id::OBJ_BARREL, _object_id::OBJ_BARRELEX);
+		return IsAnyOf(_otype, _object_id::OBJ_BARREL, _object_id::OBJ_BARRELEX, _object_id::OBJ_POD, _object_id::OBJ_PODEX, _object_id::OBJ_URN, _object_id::OBJ_URNEX);
+	}
+
+	/**
+	 * @brief Check if this object contains explosives or caustic material
+	 */
+	[[nodiscard]] constexpr bool isExplosive() const
+	{
+		return IsAnyOf(_otype, _object_id::OBJ_BARRELEX, _object_id::OBJ_PODEX, _object_id::OBJ_URNEX);
 	}
 
 	/**
@@ -220,7 +228,7 @@ struct Object {
 	 */
 	[[nodiscard]] constexpr bool IsDoor() const
 	{
-		return IsAnyOf(_otype, _object_id::OBJ_L1LDOOR, _object_id::OBJ_L1RDOOR, _object_id::OBJ_L2LDOOR, _object_id::OBJ_L2RDOOR, _object_id::OBJ_L3LDOOR, _object_id::OBJ_L3RDOOR);
+		return IsAnyOf(_otype, _object_id::OBJ_L1LDOOR, _object_id::OBJ_L1RDOOR, _object_id::OBJ_L2LDOOR, _object_id::OBJ_L2RDOOR, _object_id::OBJ_L3LDOOR, _object_id::OBJ_L3RDOOR, _object_id::OBJ_L5LDOOR, _object_id::OBJ_L5RDOOR);
 	}
 
 	/**
@@ -280,6 +288,8 @@ void InitObjectGFX();
 void FreeObjectGFX();
 void AddL1Objs(int x1, int y1, int x2, int y2);
 void AddL2Objs(int x1, int y1, int x2, int y2);
+void AddL3Objs(int x1, int y1, int x2, int y2);
+void AddCryptObjects(int x1, int y1, int x2, int y2);
 void InitObjects();
 void SetMapObjects(const uint16_t *dunData, int startx, int starty);
 /**
@@ -291,22 +301,23 @@ void AddObject(_object_id objType, Point objPos);
 void OperateTrap(Object &trap);
 void ProcessObjects();
 void RedoPlayerVision();
-void MonstCheckDoors(Monster &monster);
+void MonstCheckDoors(const Monster &monster);
 void ObjChangeMap(int x1, int y1, int x2, int y2);
 void ObjChangeMapResync(int x1, int y1, int x2, int y2);
-void TryDisarm(int pnum, int i);
 int ItemMiscIdIdx(item_misc_id imiscid);
-void OperateObject(int pnum, int i, bool TeleFlag);
-void SyncOpObject(int pnum, int cmd, int i);
-void BreakObject(int pnum, Object &object);
-void SyncBreakObj(int pnum, Object &object);
+void OperateObject(Player &player, int i, bool TeleFlag);
+void SyncOpObject(Player &player, int cmd, Object &object);
+void BreakObjectMissile(Object &object);
+void BreakObject(const Player &player, Object &object);
+void DeltaSyncOpObject(int cmd, Object &object);
+void DeltaSyncBreakObj(Object &object);
+void SyncBreakObj(const Player &player, Object &object);
 void SyncObjectAnim(Object &object);
 /**
  * @brief Updates the text drawn in the info box to describe the given object
  * @param object The currently highlighted object
  */
 void GetObjectStr(const Object &object);
-void OperateNakrulLever();
 void SyncNakrulRoom();
 void AddNakrulLeaver();
 

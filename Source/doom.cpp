@@ -9,19 +9,19 @@
 #include "engine.h"
 #include "engine/cel_sprite.hpp"
 #include "engine/load_cel.hpp"
-#include "engine/render/cel_render.hpp"
+#include "engine/render/cl2_render.hpp"
 #include "utils/stdcompat/optional.hpp"
 
 namespace devilution {
 namespace {
-std::optional<OwnedCelSprite> DoomCel;
+OptionalOwnedCelSprite DoomCel;
 } // namespace
 
 bool DoomFlag;
 
 void doom_init()
 {
-	DoomCel = LoadCel("Items\\Map\\MapZtown.CEL", 640);
+	DoomCel = LoadCelAsCl2("Items\\Map\\MapZtown.CEL", 640);
 	DoomFlag = true;
 }
 
@@ -37,7 +37,7 @@ void doom_draw(const Surface &out)
 		return;
 	}
 
-	CelDrawTo(out, { PANEL_X, PANEL_Y - 1 }, *DoomCel, 0);
+	Cl2Draw(out, GetUIRectangle().position + Displacement { 0, 352 }, CelSprite { *DoomCel }, 0);
 }
 
 } // namespace devilution

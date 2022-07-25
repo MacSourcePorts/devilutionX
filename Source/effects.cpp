@@ -6,11 +6,12 @@
 #include "effects.h"
 
 #include "engine/random.hpp"
+#include "engine/sound.h"
+#include "engine/sound_defs.hpp"
 #include "init.h"
 #include "player.h"
-#include "sound.h"
-#include "sound_defs.hpp"
 #include "utils/stdcompat/algorithm.hpp"
+#include "utils/str_cat.hpp"
 
 namespace devilution {
 
@@ -27,15 +28,6 @@ constexpr bool AllowStreaming = false;
 
 /** Specifies the sound file and the playback state of the current sound effect. */
 TSFX *sgpStreamSFX = nullptr;
-
-/**
- * Monster sound type prefix
- * a: Attack
- * h: Hit
- * d: Death
- * s: Special
- */
-const char MonstSndChar[] = { 'a', 'h', 'd', 's' };
 
 /* data */
 /** List of all sounds, except monsters and music */
@@ -1099,7 +1091,7 @@ void StreamUpdate()
 
 void PlaySfxPriv(TSFX *pSFX, bool loc, Point position)
 {
-	if (Players[MyPlayerId].pLvlLoad != 0 && gbIsMultiplayer) {
+	if (MyPlayer->pLvlLoad != 0 && gbIsMultiplayer) {
 		return;
 	}
 	if (!gbSndInited || !gbSoundOn || gbBufferMsgs != 0) {
@@ -1160,7 +1152,7 @@ _sfx_id RndSFX(_sfx_id psfx)
 	return static_cast<_sfx_id>(psfx + GenerateRnd(nRand));
 }
 
-void PrivSoundInit(BYTE bLoadMask)
+void PrivSoundInit(uint8_t bLoadMask)
 {
 	if (!gbSndInited) {
 		return;
@@ -1209,42 +1201,9 @@ void stream_stop()
 	}
 }
 
-void InitMonsterSND(int monst)
-{
-	if (!gbSndInited) {
-		return;
-	}
-
-	const int mtype = LevelMonsterTypes[monst].mtype;
-	for (int i = 0; i < 4; i++) {
-		if (MonstSndChar[i] != 's' || MonstersData[mtype].snd_special) {
-			for (int j = 0; j < 2; j++) {
-				char path[MAX_PATH];
-				sprintf(path, MonstersData[mtype].sndfile, MonstSndChar[i], j + 1);
-				LevelMonsterTypes[monst].Snds[i][j] = sound_file_load(path);
-			}
-		}
-	}
-}
-
-void FreeMonsterSnd()
-{
-#ifdef _DEBUG
-	for (int i = 0; i < MAX_LVLMTYPES; i++) {
-#else
-	for (int i = 0; i < LevelMonsterTypeCount; i++) {
-#endif
-		for (auto &variants : LevelMonsterTypes[i].Snds) {
-			for (auto &snd : variants) {
-				snd = nullptr;
-			}
-		}
-	}
-}
-
 bool CalculateSoundPosition(Point soundPosition, int *plVolume, int *plPan)
 {
-	const auto &playerPosition = Players[MyPlayerId].position.tile;
+	const auto &playerPosition = MyPlayer->position.tile;
 	const auto delta = soundPosition - playerPosition;
 
 	int pan = (delta.deltaX - delta.deltaY) * 256;
@@ -1322,7 +1281,7 @@ void sound_init()
 		if (gbIsHellfire)
 			mask |= sfx_MONK;
 	} else {
-		switch (Players[MyPlayerId]._pClass) {
+		switch (MyPlayer->_pClass) {
 		case HeroClass::Warrior:
 		case HeroClass::Barbarian:
 			mask |= sfx_WARRIOR;
@@ -1350,19 +1309,15 @@ void ui_sound_init()
 	PrivSoundInit(sfx_UI);
 }
 
-void effects_play_sound(const char *sndFile)
+void effects_play_sound(_sfx_id id)
 {
 	if (!gbSndInited || !gbSoundOn) {
 		return;
 	}
 
-	for (auto &sfx : sgSFX) {
-		if (strcasecmp(sfx.pszName, sndFile) == 0 && sfx.pSnd != nullptr) {
-			if (!sfx.pSnd->isPlaying())
-				snd_play_snd(sfx.pSnd.get(), 0, 0);
-
-			return;
-		}
+	TSFX &sfx = sgSFX[id];
+	if (sfx.pSnd != nullptr && !sfx.pSnd->isPlaying()) {
+		snd_play_snd(sfx.pSnd.get(), 0, 0);
 	}
 }
 

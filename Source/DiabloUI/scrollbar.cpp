@@ -1,23 +1,25 @@
 #include "scrollbar.h"
 
+#include "engine/load_pcx.hpp"
+
 namespace devilution {
 
-Art ArtScrollBarBackground;
-Art ArtScrollBarThumb;
-Art ArtScrollBarArrow;
+std::optional<OwnedCelSpriteWithFrameHeight> ArtScrollBarBackground;
+std::optional<OwnedCelSpriteWithFrameHeight> ArtScrollBarThumb;
+std::optional<OwnedCelSpriteSheetWithFrameHeight> ArtScrollBarArrow;
 
 void LoadScrollBar()
 {
-	LoadArt("ui_art\\sb_bg.pcx", &ArtScrollBarBackground);
-	LoadArt("ui_art\\sb_thumb.pcx", &ArtScrollBarThumb);
-	LoadArt("ui_art\\sb_arrow.pcx", &ArtScrollBarArrow, 4);
+	ArtScrollBarBackground = LoadPcxAsCl2("ui_art\\sb_bg.pcx");
+	ArtScrollBarThumb = LoadPcxAsCl2("ui_art\\sb_thumb.pcx");
+	ArtScrollBarArrow = LoadPcxSpriteSheetAsCl2("ui_art\\sb_arrow.pcx", 4);
 }
 
 void UnloadScrollBar()
 {
-	ArtScrollBarArrow.Unload();
-	ArtScrollBarThumb.Unload();
-	ArtScrollBarBackground.Unload();
+	ArtScrollBarArrow = std::nullopt;
+	ArtScrollBarThumb = std::nullopt;
+	ArtScrollBarBackground = std::nullopt;
 }
 
 } // namespace devilution

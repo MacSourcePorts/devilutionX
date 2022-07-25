@@ -16,20 +16,20 @@ namespace net {
 template <class P>
 class base_protocol : public base {
 public:
-	virtual int create(std::string addrstr);
-	virtual int join(std::string addrstr);
-	virtual void poll();
-	virtual void send(packet &pkt);
-	virtual void DisconnectNet(plr_t plr);
+	int create(std::string addrstr) override;
+	int join(std::string addrstr) override;
+	void poll() override;
+	void send(packet &pkt) override;
+	void DisconnectNet(plr_t plr) override;
 
-	virtual bool SNetLeaveGame(int type);
+	bool SNetLeaveGame(int type) override;
 
-	virtual std::string make_default_gamename();
-	virtual bool send_info_request();
-	virtual void clear_gamelist();
-	virtual std::vector<GameInfo> get_gamelist();
+	std::string make_default_gamename() override;
+	bool send_info_request() override;
+	void clear_gamelist() override;
+	std::vector<GameInfo> get_gamelist() override;
 
-	virtual ~base_protocol() = default;
+	~base_protocol() override = default;
 
 protected:
 	bool IsGameHost() override;
@@ -292,16 +292,15 @@ template <class P>
 void base_protocol<P>::recv_decrypted(packet &pkt, endpoint_t sender)
 {
 	if (pkt.Source() == PLR_BROADCAST && pkt.Destination() == PLR_MASTER && pkt.Type() == PT_INFO_REPLY) {
-		constexpr size_t sizePlayerName = (sizeof(char) * PLR_NAME_LEN);
-		size_t neededSize = sizeof(GameData) + (sizePlayerName * MAX_PLRS);
+		size_t neededSize = sizeof(GameData) + (PlayerNameLength * MAX_PLRS);
 		if (pkt.Info().size() < neededSize)
 			return;
 		const GameData *gameData = (const GameData *)pkt.Info().data();
 		std::vector<std::string> playerNames;
 		for (size_t i = 0; i < MAX_PLRS; i++) {
 			std::string playerName;
-			const char *playerNamePointer = (const char *)(pkt.Info().data() + sizeof(GameData) + (i * sizePlayerName));
-			playerName.append(playerNamePointer, strnlen(playerNamePointer, PLR_NAME_LEN));
+			const char *playerNamePointer = (const char *)(pkt.Info().data() + sizeof(GameData) + (i * PlayerNameLength));
+			playerName.append(playerNamePointer, strnlen(playerNamePointer, PlayerNameLength));
 			if (!playerName.empty())
 				playerNames.push_back(playerName);
 		}
@@ -324,17 +323,16 @@ void base_protocol<P>::recv_ingame(packet &pkt, endpoint_t sender)
 		} else if (pkt.Type() == PT_INFO_REQUEST) {
 			if ((plr_self != PLR_BROADCAST) && (get_master() == plr_self)) {
 				buffer_t buf;
-				constexpr size_t sizePlayerName = (sizeof(char) * PLR_NAME_LEN);
-				buf.resize(game_init_info.size() + (sizePlayerName * MAX_PLRS) + gamename.size());
+				buf.resize(game_init_info.size() + (PlayerNameLength * MAX_PLRS) + gamename.size());
 				std::memcpy(buf.data(), &game_init_info[0], game_init_info.size());
 				for (size_t i = 0; i < MAX_PLRS; i++) {
 					if (Players[i].plractive) {
-						std::memcpy(buf.data() + game_init_info.size() + (i * sizePlayerName), &Players[i]._pName, sizePlayerName);
+						std::memcpy(buf.data() + game_init_info.size() + (i * PlayerNameLength), &Players[i]._pName, PlayerNameLength);
 					} else {
-						std::memset(buf.data() + game_init_info.size() + (i * sizePlayerName), '\0', sizePlayerName);
+						std::memset(buf.data() + game_init_info.size() + (i * PlayerNameLength), '\0', PlayerNameLength);
 					}
 				}
-				std::memcpy(buf.data() + game_init_info.size() + (sizePlayerName * MAX_PLRS), &gamename[0], gamename.size());
+				std::memcpy(buf.data() + game_init_info.size() + (PlayerNameLength * MAX_PLRS), &gamename[0], gamename.size());
 				auto reply = pktfty->make_packet<PT_INFO_REPLY>(PLR_BROADCAST,
 				    PLR_MASTER,
 				    buf);

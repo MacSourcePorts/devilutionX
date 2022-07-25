@@ -8,13 +8,14 @@
 #include <string>
 #include <vector>
 
-#if (defined(_WIN64) || defined(_WIN32)) && !defined(__UWP__)
+#if (defined(_WIN64) || defined(_WIN32)) && !defined(__UWP__) && !defined(NXDK)
 #include <find_steam_game.h>
 #endif
 
 #include "DiabloUI/diabloui.h"
-#include "dx.h"
 #include "engine/assets.hpp"
+#include "engine/dx.h"
+#include "miniwin/misc_msg.h"
 #include "mpq/mpq_reader.hpp"
 #include "options.h"
 #include "pfile.h"
@@ -36,7 +37,7 @@ bool gbActive;
 /** A handle to an hellfire.mpq archive. */
 std::optional<MpqArchive> hellfire_mpq;
 /** The current input handler function */
-WNDPROC CurrentProc;
+EventHandler CurrentEventHandler;
 /** A handle to the spawn.mpq archive. */
 std::optional<MpqArchive> spawn_mpq;
 /** A handle to the diabdat.mpq archive. */
@@ -90,12 +91,14 @@ std::vector<std::string> GetMPQSearchPaths()
 	if (paths[0] == paths[1])
 		paths.pop_back();
 
-#if defined(__linux__) && !defined(__ANDROID__)
+#if defined(__unix__) && !defined(__ANDROID__)
 	paths.emplace_back("/usr/share/diasurgical/devilutionx/");
 	paths.emplace_back("/usr/local/share/diasurgical/devilutionx/");
 #elif defined(__3DS__) || defined(__SWITCH__)
 	paths.emplace_back("romfs:/");
-#elif (defined(_WIN64) || defined(_WIN32)) && !defined(__UWP__)
+#elif defined(NXDK)
+	paths.emplace_back("D:\\");
+#elif (defined(_WIN64) || defined(_WIN32)) && !defined(__UWP__) && !defined(NXDK)
 	char gogpath[_FSG_PATH_MAX];
 	fsg_get_gog_game_path(gogpath, "1412601690");
 	if (strlen(gogpath) > 0) {
@@ -112,11 +115,7 @@ std::vector<std::string> GetMPQSearchPaths()
 
 		std::string message;
 		for (std::size_t i = 0; i < paths.size(); ++i) {
-			char prefix[32];
-			std::snprintf(prefix, sizeof(prefix), "\n%6u. '", static_cast<unsigned>(i + 1));
-			message.append(prefix);
-			message.append(paths[i]);
-			message += '\'';
+			message.append(fmt::format("\n{:6d}. '{}'", i + 1, paths[i]));
 		}
 		LogVerbose("MPQ search paths:{}", message);
 	}
@@ -129,7 +128,7 @@ std::vector<std::string> GetMPQSearchPaths()
 void init_cleanup()
 {
 	if (gbIsMultiplayer && gbRunGame) {
-		pfile_write_hero(/*writeGameData=*/false, /*clearTables=*/true);
+		pfile_write_hero(/*writeGameData=*/false);
 		sfile_write_stash();
 	}
 
@@ -188,12 +187,14 @@ void LoadGameArchives()
 		if (spawn_mpq)
 			gbIsSpawn = true;
 	}
-	SDL_RWops *handle = OpenAsset("ui_art\\title.pcx");
-	if (handle == nullptr) {
-		LogError("{}", SDL_GetError());
-		InsertCDDlg(_("diabdat.mpq or spawn.mpq"));
+	if (!HeadlessMode) {
+		SDL_RWops *handle = OpenAsset("ui_art\\title.pcx");
+		if (handle == nullptr) {
+			LogError("{}", SDL_GetError());
+			InsertCDDlg(_("diabdat.mpq or spawn.mpq"));
+		}
+		SDL_RWclose(handle);
 	}
-	SDL_RWclose(handle);
 
 	hellfire_mpq = LoadMPQ(paths, "hellfire.mpq");
 	if (hellfire_mpq)
@@ -212,15 +213,15 @@ void LoadGameArchives()
 	hfvoice_mpq = LoadMPQ(paths, "hfvoice.mpq");
 
 	if (gbIsHellfire && (!hfmonk_mpq || !hfmusic_mpq || !hfvoice_mpq)) {
-		UiErrorOkDialog(_("Some Hellfire MPQs are missing").c_str(), _("Not all Hellfire MPQs were found.\nPlease copy all the hf*.mpq files.").c_str());
-		app_fatal(nullptr);
+		UiErrorOkDialog(_("Some Hellfire MPQs are missing"), _("Not all Hellfire MPQs were found.\nPlease copy all the hf*.mpq files."));
+		diablo_quit(1);
 	}
 }
 
 void init_create_window()
 {
 	if (!SpawnWindow(PROJECT_NAME))
-		app_fatal("%s", _("Unable to create main window").c_str());
+		app_fatal(_("Unable to create main window"));
 	dx_init();
 	gbActive = true;
 #ifndef USE_SDL1
@@ -239,13 +240,11 @@ void MainWndProc(uint32_t msg)
 	}
 }
 
-WNDPROC SetWindowProc(WNDPROC newProc)
+EventHandler SetEventHandler(EventHandler eventHandler)
 {
-	WNDPROC oldProc;
-
-	oldProc = CurrentProc;
-	CurrentProc = newProc;
-	return oldProc;
+	EventHandler previousHandler = CurrentEventHandler;
+	CurrentEventHandler = eventHandler;
+	return previousHandler;
 }
 
 } // namespace devilution

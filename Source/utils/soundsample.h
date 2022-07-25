@@ -6,7 +6,7 @@
 
 #include <Aulib/Stream.h>
 
-#include "sound_defs.hpp"
+#include "engine/sound_defs.hpp"
 #include "utils/stdcompat/shared_ptr_array.hpp"
 
 namespace devilution {
@@ -38,6 +38,7 @@ public:
 	 * @brief Sets the sample's WAV, FLAC, or Ogg/Vorbis data.
 	 * @param fileData Buffer containing the data
 	 * @param dwBytes Length of buffer
+	 * @param isMp3 Whether the data is an MP3
 	 * @return 0 on success, -1 otherwise
 	 */
 	int SetChunk(ArraySharedPtr<std::uint8_t> fileData, std::size_t dwBytes, bool isMp3);

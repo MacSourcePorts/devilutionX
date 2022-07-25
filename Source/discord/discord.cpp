@@ -12,13 +12,14 @@
 #include <fmt/format.h>
 
 #include "config.h"
-#include "gendung.h"
 #include "init.h"
+#include "levels/gendung.h"
+#include "levels/setmaps.h"
 #include "multi.h"
 #include "panels/charpanel.hpp"
 #include "player.h"
-#include "setmaps.h"
 #include "utils/language.h"
+#include "utils/str_cat.hpp"
 
 namespace devilution {
 namespace discord_manager {
@@ -59,7 +60,7 @@ std::string GetLocationString()
 {
 	// Quest Level Name
 	if (setlevel) {
-		return _(QuestLevelNames[setlvlnum]);
+		return std::string(_(QuestLevelNames[setlvlnum]));
 	}
 
 	// Dungeon Name
@@ -79,43 +80,45 @@ std::string GetLocationString()
 		else if (tracked_data.dungeonArea == DTYPE_CRYPT)
 			level -= 20;
 
-		return fmt::format(_(/* TRANSLATORS: dungeon type and floor number i.e. "Cathedral 3"*/ "{} {}"), dungeonStr, level);
+		return fmt::format(fmt::runtime(_(/* TRANSLATORS: dungeon type and floor number i.e. "Cathedral 3"*/ "{} {}")), dungeonStr, level);
 	}
 	return dungeonStr;
 }
 
 std::string GetCharacterString()
 {
-	const std::string &charClassStr = _(ClassStrTbl[static_cast<int>(Players[MyPlayerId]._pClass)]);
-	return fmt::format(_(/* TRANSLATORS: Discord character, i.e. "Lv 6 Warrior" */ "Lv {} {}"), tracked_data.playerLevel, charClassStr);
+	const string_view charClassStr = _(ClassStrTbl[static_cast<int>(MyPlayer->_pClass)]);
+	return fmt::format(fmt::runtime(_(/* TRANSLATORS: Discord character, i.e. "Lv 6 Warrior" */ "Lv {} {}")), tracked_data.playerLevel, charClassStr);
 }
 
 std::string GetDetailString()
 {
-	return fmt::format("{} - {}", GetCharacterString(), GetLocationString());
+	return StrCat(GetCharacterString(), " - ", GetLocationString());
 }
 
 std::string GetStateString()
 {
 	constexpr std::array<const char *, 3> DifficultyStrs = { N_("Normal"), N_("Nightmare"), N_("Hell") };
-	std::string difficultyStr = _(DifficultyStrs[sgGameInitInfo.nDifficulty]);
-	return fmt::format(_(/* TRANSLATORS: Discord state i.e. "Nightmare difficulty" */ "{} difficulty"), difficultyStr);
+	const string_view difficultyStr = _(DifficultyStrs[sgGameInitInfo.nDifficulty]);
+	return fmt::format(fmt::runtime(_(/* TRANSLATORS: Discord state i.e. "Nightmare difficulty" */ "{} difficulty")), difficultyStr);
 }
 
 std::string GetTooltipString()
 {
-	return fmt::format("{} - {}", Players[MyPlayerId]._pName, GetCharacterString());
+	return StrCat(MyPlayer->_pName, " - ", GetCharacterString());
 }
 
 std::string GetPlayerAssetString()
 {
-	char heroChar = CharChar[static_cast<int>(Players[MyPlayerId]._pClass)];
-	char armourChar = ArmourChar[tracked_data.playerGfx >> 4];
-	char wpnChar = WepChar[tracked_data.playerGfx & 0xF];
-
-	std::string result = fmt::format("{}{}{}as", heroChar, armourChar, wpnChar);
-	std::transform(std::begin(result), std::end(result), std::begin(result), [](char c) { return static_cast<char>(std::tolower(c)); });
-	return result;
+	constexpr char CaseDistance = 'a' - 'A';
+	char chars[5] {
+		static_cast<char>(CharChar[static_cast<int>(MyPlayer->_pClass)] - CaseDistance),
+		static_cast<char>(ArmourChar[tracked_data.playerGfx >> 4] - CaseDistance),
+		static_cast<char>(WepChar[tracked_data.playerGfx & 0xF] - CaseDistance),
+		'a',
+		's'
+	};
+	return std::string(chars, 5);
 }
 
 void ResetStartTime()
@@ -134,7 +137,7 @@ void UpdateGame()
 		return;
 
 	auto newData = PlayerData {
-		leveltype, setlvlnum, currlevel, Players[MyPlayerId]._pLevel, Players[MyPlayerId]._pgfxnum
+		leveltype, setlvlnum, currlevel, MyPlayer->_pLevel, MyPlayer->_pgfxnum
 	};
 	if (newData != tracked_data) {
 		tracked_data = newData;
@@ -179,7 +182,7 @@ void UpdateMenu(bool forced)
 
 		discord::Activity activity = {};
 		activity.SetName(PROJECT_NAME);
-		activity.SetState(_(/* TRANSLATORS: Discord activity, not in game */ "In Menu").c_str());
+		activity.SetState(_(/* TRANSLATORS: Discord activity, not in game */ "In Menu").data());
 
 		activity.GetTimestamps().SetStart(start_time);
 

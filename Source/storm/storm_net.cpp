@@ -18,8 +18,6 @@ namespace devilution {
 
 namespace {
 std::unique_ptr<net::abstract_net> dvlnet_inst;
-char gpszGameName[128] = {};
-char gpszGamePassword[128] = {};
 bool GameIsPublic = {};
 thread_local uint32_t dwLastError = 0;
 
@@ -121,23 +119,6 @@ bool SNetDropPlayer(int playerid, uint32_t flags)
 	return dvlnet_inst->SNetDropPlayer(playerid, flags);
 }
 
-bool SNetGetGameInfo(game_info type, void *dst, unsigned int length)
-{
-#ifndef NONET
-	std::lock_guard<SdlMutex> lg(storm_net_mutex);
-#endif
-	switch (type) {
-	case GAMEINFO_NAME:
-		CopyUtf8((char *)dst, gpszGameName, length);
-		break;
-	case GAMEINFO_PASSWORD:
-		CopyUtf8((char *)dst, gpszGamePassword, length);
-		break;
-	}
-
-	return true;
-}
-
 bool SNetLeaveGame(int type)
 {
 #ifndef NONET
@@ -151,6 +132,7 @@ bool SNetLeaveGame(int type)
 /**
  * @brief Called by engine for single, called by ui for multi
  * @param provider BNET, IPXN, MODM, SCBL or UDPN
+ * @param gameData The game data
  */
 bool SNetInitializeProvider(uint32_t provider, struct GameData *gameData)
 {
@@ -180,7 +162,7 @@ bool SNetCreateGame(const char *pszGameName, const char *pszGamePassword, char *
 		pszGameName = defaultName.c_str();
 	}
 
-	CopyUtf8(gpszGameName, pszGameName, sizeof(gpszGameName));
+	GameName = pszGameName;
 	if (pszGamePassword != nullptr)
 		DvlNet_SetPassword(pszGamePassword);
 	else
@@ -195,7 +177,7 @@ bool SNetJoinGame(char *pszGameName, char *pszGamePassword, int *playerID)
 	std::lock_guard<SdlMutex> lg(storm_net_mutex);
 #endif
 	if (pszGameName != nullptr)
-		CopyUtf8(gpszGameName, pszGameName, sizeof(gpszGameName));
+		GameName = pszGameName;
 	if (pszGamePassword != nullptr)
 		DvlNet_SetPassword(pszGamePassword);
 	else
@@ -252,14 +234,14 @@ std::vector<GameInfo> DvlNet_GetGamelist()
 void DvlNet_SetPassword(std::string pw)
 {
 	GameIsPublic = false;
-	CopyUtf8(gpszGamePassword, pw, sizeof(gpszGamePassword));
+	GamePassword = pw;
 	dvlnet_inst->setup_password(std::move(pw));
 }
 
 void DvlNet_ClearPassword()
 {
 	GameIsPublic = true;
-	gpszGamePassword[0] = '\0';
+	GamePassword.clear();
 	dvlnet_inst->clear_password();
 }
 

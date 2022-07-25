@@ -60,6 +60,17 @@ int32_t AdvanceRndSeed();
 int32_t GenerateRnd(int32_t v);
 
 /**
+ * @brief Generates a random boolean value using the vanilla RNG
+ *
+ * This function returns true 1 in `frequency` of the time, otherwise false. For example the default frequency of 2
+ * represents a 50/50 chance.
+ *
+ * @param frequency odds of returning a true value
+ * @return A random boolean value
+ */
+bool FlipCoin(unsigned frequency = 2);
+
+/**
  * @brief Picks one of the elements in the list randomly.
  *
  * @param values The values to pick from
@@ -68,7 +79,7 @@ int32_t GenerateRnd(int32_t v);
 template <typename T>
 const T PickRandomlyAmong(const std::initializer_list<T> &values)
 {
-	const auto index { std::max<int32_t>(GenerateRnd(values.size()), 0) };
+	const auto index { std::max<int32_t>(GenerateRnd(static_cast<int32_t>(values.size())), 0) };
 
 	return *(values.begin() + index);
 }

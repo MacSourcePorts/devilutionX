@@ -1,29 +1,48 @@
 #include "DiabloUI/button.h"
-#include "DiabloUI/art_draw.h"
+
 #include "DiabloUI/diabloui.h"
-#include "DiabloUI/errorart.h"
+#include "engine/cel_sprite.hpp"
+#include "engine/load_pcx.hpp"
+#include "engine/render/cl2_render.hpp"
 #include "engine/render/text_render.hpp"
 #include "utils/display.h"
 
 namespace devilution {
 
-Art SmlButton;
+namespace {
 
-void LoadSmlButtonArt()
+std::optional<OwnedCelSpriteSheetWithFrameHeight> ButtonSprites;
+
+} // namespace
+
+void LoadDialogButtonGraphics()
 {
-	LoadArt(&SmlButton, ButtonData, SML_BUTTON_WIDTH, SML_BUTTON_HEIGHT * 2, 2);
+	ButtonSprites = LoadPcxSpriteSheetAsCl2("ui_art\\dvl_but_sml.pcx", 2);
+	if (ButtonSprites == std::nullopt) {
+		ButtonSprites = LoadPcxSpriteSheetAsCl2("ui_art\\but_sml.pcx", 15);
+	}
+}
+
+void FreeDialogButtonGraphics()
+{
+	ButtonSprites = std::nullopt;
+}
+
+CelFrameWithHeight ButtonSprite(bool pressed)
+{
+	return ButtonSprites->sprite(pressed ? 1 : 0);
 }
 
 void RenderButton(UiButton *button)
 {
-	DrawArt({ button->m_rect.x, button->m_rect.y }, button->GetArt(), button->GetFrame(), button->m_rect.w, button->m_rect.h);
+	const Surface &out = Surface(DiabloUiSurface()).subregion(button->m_rect.x, button->m_rect.y, button->m_rect.w, button->m_rect.h);
+	RenderCl2Sprite(out, ButtonSprite(button->IsPressed()), { 0, 0 });
 
-	Rectangle textRect { { button->m_rect.x, button->m_rect.y }, { button->m_rect.w, button->m_rect.h } };
+	Rectangle textRect { { 0, 0 }, { button->m_rect.w, button->m_rect.h } };
 	if (!button->IsPressed()) {
 		--textRect.position.y;
 	}
 
-	const Surface &out = Surface(DiabloUiSurface());
 	DrawString(out, button->GetText(), textRect, UiFlags::AlignCenter | UiFlags::FontSizeDialog | UiFlags::ColorDialogWhite);
 }
 

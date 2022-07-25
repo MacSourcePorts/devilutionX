@@ -5,24 +5,23 @@
 using namespace devilution;
 
 namespace devilution {
-extern bool TestPlayerDoGotHit(int pnum);
+extern bool TestPlayerDoGotHit(Player &player);
 }
 
 int RunBlockTest(int frames, ItemSpecialEffect flags)
 {
-	int pnum = 0;
-	auto &player = Players[pnum];
+	Player &player = Players[0];
 
 	player._pHFrames = frames;
 	player._pIFlags = flags;
-	StartPlrHit(pnum, 5, false);
+	StartPlrHit(player, 5, false);
 
 	int i = 1;
 	for (; i < 100; i++) {
-		TestPlayerDoGotHit(pnum);
+		TestPlayerDoGotHit(player);
 		if (player._pmode != PM_GOTHIT)
 			break;
-		player.AnimInfo.CurrentFrame++;
+		player.AnimInfo.currentFrame++;
 	}
 
 	return i;
@@ -91,10 +90,10 @@ TEST(Player, PM_DoGotHit)
 static void AssertPlayer(Player &player)
 {
 	ASSERT_EQ(Count8(player._pSplLvl, 64), 0);
-	ASSERT_EQ(Count8(player.InvGrid, NUM_INV_GRID_ELEM), 1);
+	ASSERT_EQ(Count8(player.InvGrid, InventoryGridCells), 1);
 	ASSERT_EQ(CountItems(player.InvBody, NUM_INVLOC), 1);
-	ASSERT_EQ(CountItems(player.InvList, NUM_INV_GRID_ELEM), 1);
-	ASSERT_EQ(CountItems(player.SpdList, MAXBELTITEMS), 2);
+	ASSERT_EQ(CountItems(player.InvList, InventoryGridCells), 1);
+	ASSERT_EQ(CountItems(player.SpdList, MaxBeltItems), 2);
 	ASSERT_EQ(CountItems(&player.HoldItem, 1), 0);
 
 	ASSERT_EQ(player.position.tile.x, 0);
@@ -136,7 +135,7 @@ static void AssertPlayer(Player &player)
 	ASSERT_EQ(player.pDamAcFlags, ItemSpecialEffectHf::None);
 
 	ASSERT_EQ(player._pmode, 0);
-	ASSERT_EQ(Count8(player.walkpath, MAX_PATH_LENGTH), 0);
+	ASSERT_EQ(Count8(player.walkpath, MaxPathLength), 0);
 	ASSERT_EQ(player._pSpell, 0);
 	ASSERT_EQ(player._pSplType, 0);
 	ASSERT_EQ(player._pSplFrom, 0);
@@ -181,6 +180,6 @@ static void AssertPlayer(Player &player)
 
 TEST(Player, CreatePlayer)
 {
-	CreatePlayer(0, HeroClass::Rogue);
+	CreatePlayer(Players[0], HeroClass::Rogue);
 	AssertPlayer(Players[0]);
 }

@@ -10,29 +10,35 @@
 #include <unordered_map>
 #include <utility>
 
+#include <fmt/compile.h>
+
 #include "DiabloUI/art_draw.h"
 #include "DiabloUI/diabloui.h"
 #include "DiabloUI/ui_item.h"
-#include "cel_render.hpp"
 #include "engine.h"
 #include "engine/load_cel.hpp"
 #include "engine/load_file.hpp"
+#include "engine/load_pcx.hpp"
+#include "engine/palette.h"
 #include "engine/point.hpp"
-#include "palette.h"
+#include "engine/render/cl2_render.hpp"
 #include "utils/display.h"
 #include "utils/language.h"
 #include "utils/sdl_compat.h"
+#include "utils/stdcompat/optional.hpp"
 #include "utils/utf8.hpp"
 
 namespace devilution {
 
-std::optional<OwnedCelSprite> pSPentSpn2Cels;
+OptionalOwnedCelSprite pSPentSpn2Cels;
 
 namespace {
 
 constexpr char32_t ZWSP = U'\u200B'; // Zero-width space
 
-std::unordered_map<uint32_t, Art> Fonts;
+using Font = const OwnedCelSpriteSheetWithFrameHeight;
+std::unordered_map<uint32_t, std::optional<OwnedCelSpriteSheetWithFrameHeight>> Fonts;
+
 std::unordered_map<uint32_t, std::array<uint8_t, 256>> FontKerns;
 std::array<int, 6> FontSizes = { 12, 24, 30, 42, 46, 22 };
 std::array<uint8_t, 6> CJKWidth = { 17, 24, 28, 41, 47, 16 };
@@ -41,7 +47,7 @@ constexpr std::array<int, 6> LineHeights = { 12, 26, 38, 42, 50, 22 };
 constexpr int SmallFontTallLineHeight = 16;
 std::array<int, 6> BaseLineOffset = { -3, -2, -3, -6, -7, 3 };
 
-std::array<const char *, 14> ColorTranlations = {
+std::array<const char *, 14> ColorTranslations = {
 	"fonts\\goldui.trn",
 	"fonts\\grayui.trn",
 	"fonts\\golduis.trn",
@@ -61,6 +67,8 @@ std::array<const char *, 14> ColorTranlations = {
 	"fonts\\buttonface.trn",
 	"fonts\\buttonpushed.trn",
 };
+
+std::array<std::optional<std::array<uint8_t, 256>>, 14> ColorTranslationsData;
 
 GameFontTables GetSizeFromFlags(UiFlags flags)
 {
@@ -130,6 +138,11 @@ bool IsSmallFontTallRow(uint16_t row)
 	return IsCJK(row) || IsHangul(row);
 }
 
+void GetFontPath(GameFontTables size, uint16_t row, string_view ext, char *out)
+{
+	*fmt::format_to(out, FMT_COMPILE(R"(fonts\{}-{:02x}.{})"), FontSizes[size], row, ext) = '\0';
+}
+
 std::array<uint8_t, 256> *LoadFontKerning(GameFontTables size, uint16_t row)
 {
 	uint32_t fontId = (size << 16) | row;
@@ -140,7 +153,7 @@ std::array<uint8_t, 256> *LoadFontKerning(GameFontTables size, uint16_t row)
 	}
 
 	char path[32];
-	sprintf(path, "fonts\\%i-%02x.bin", FontSizes[size], row);
+	GetFontPath(size, row, "bin", &path[0]);
 
 	auto *kerning = &FontKerns[fontId];
 
@@ -162,32 +175,46 @@ std::array<uint8_t, 256> *LoadFontKerning(GameFontTables size, uint16_t row)
 	return kerning;
 }
 
-Art *LoadFont(GameFontTables size, text_color color, uint16_t row)
+uint32_t GetFontId(GameFontTables size, uint16_t row)
 {
-	uint32_t fontId = (color << 24) | (size << 16) | row;
+	return (size << 16) | row;
+}
 
+const OwnedCelSpriteSheetWithFrameHeight *LoadFont(GameFontTables size, text_color color, uint16_t row)
+{
+	if (ColorTranslations[color] != nullptr && !ColorTranslationsData[color]) {
+		ColorTranslationsData[color].emplace();
+		LoadFileInMem(ColorTranslations[color], *ColorTranslationsData[color]);
+	}
+
+	const uint32_t fontId = GetFontId(size, row);
 	auto hotFont = Fonts.find(fontId);
 	if (hotFont != Fonts.end()) {
-		return &hotFont->second;
+		return &*hotFont->second;
 	}
 
 	char path[32];
-	sprintf(path, "fonts\\%i-%02x.pcx", FontSizes[size], row);
+	GetFontPath(size, row, "pcx", &path[0]);
 
-	auto *font = &Fonts[fontId];
+	std::optional<OwnedCelSpriteSheetWithFrameHeight> &font = Fonts[fontId];
+	constexpr unsigned NumFrames = 256;
+	font = LoadPcxSpriteSheetAsCl2(path, NumFrames, /*transparentColor=*/1);
+	if (!font) {
+		LogError("Error loading font: {}", path);
+		return nullptr;
+	}
 
-	if (ColorTranlations[color] != nullptr) {
-		std::array<uint8_t, 256> colorMapping;
-		LoadFileInMem(ColorTranlations[color], colorMapping);
-		LoadMaskedArt(path, font, 256, 1, &colorMapping);
+	return &(*font);
+}
+
+void DrawFont(const Surface &out, Point position, const OwnedCelSpriteSheetWithFrameHeight *font, text_color color, int frame)
+{
+	CelFrameWithHeight glyph = font->sprite(frame);
+	if (ColorTranslationsData[color]) {
+		RenderCl2SpriteWithTRN(out, glyph, position, ColorTranslationsData[color]->data());
 	} else {
-		LoadMaskedArt(path, font, 256, 1);
+		RenderCl2Sprite(out, glyph, position);
 	}
-	if (font->surface == nullptr) {
-		LogError("Missing font: {}", path);
-	}
-
-	return font;
 }
 
 bool IsWhitespace(char32_t c)
@@ -258,7 +285,7 @@ public:
 		} else {
 			if (!args_[*result].HasFormatted()) {
 				const auto fmtStr = positional ? "{}" : fmt::string_view(rest.data(), fmtLen);
-				args_[*result].SetFormatted(fmt::format(fmtStr, args_[*result].GetIntValue()));
+				args_[*result].SetFormatted(fmt::format(fmt::runtime(fmtStr), args_[*result].GetIntValue()));
 			}
 			rest.remove_prefix(fmtLen);
 		}
@@ -325,7 +352,7 @@ int DoDrawString(const Surface &out, string_view text, Rectangle rect, Point &ch
     int spacing, int lineHeight, int lineWidth, int rightMargin, int bottomMargin,
     UiFlags flags, GameFontTables size, text_color color)
 {
-	Art *font = nullptr;
+	Font *font = nullptr;
 	std::array<uint8_t, 256> *kerning = nullptr;
 	uint32_t currentUnicodeRow = 0;
 
@@ -367,7 +394,7 @@ int DoDrawString(const Surface &out, string_view text, Rectangle rect, Point &ch
 				continue;
 		}
 
-		DrawArt(out, characterPosition, font, frame);
+		DrawFont(out, characterPosition, font, color, frame);
 		characterPosition.x += (*kerning)[frame] + spacing;
 	}
 	return text.data() - remaining.data();
@@ -377,7 +404,7 @@ int DoDrawString(const Surface &out, string_view text, Rectangle rect, Point &ch
 
 void LoadSmallSelectionSpinner()
 {
-	pSPentSpn2Cels = LoadCel("Data\\PentSpn2.CEL", 12);
+	pSPentSpn2Cels = LoadCelAsCl2("Data\\PentSpn2.CEL", 12);
 }
 
 void UnloadFonts(GameFontTables size, text_color color)
@@ -624,9 +651,9 @@ uint32_t DrawString(const Surface &out, string_view text, const Rectangle &rect,
 	const int bytesDrawn = DoDrawString(out, text, rect, characterPosition, spacing, lineHeight, lineWidth, rightMargin, bottomMargin, flags, size, color);
 
 	if (HasAnyOf(flags, UiFlags::PentaCursor)) {
-		CelDrawTo(out, characterPosition + Displacement { 0, lineHeight - BaseLineOffset[size] }, *pSPentSpn2Cels, PentSpn2Spin());
+		Cl2Draw(out, characterPosition + Displacement { 0, lineHeight - BaseLineOffset[size] }, CelSprite { *pSPentSpn2Cels }, PentSpn2Spin());
 	} else if (HasAnyOf(flags, UiFlags::TextCursor) && GetAnimationFrame(2, 500) != 0) {
-		DrawArt(out, characterPosition, LoadFont(size, color, 0), '|');
+		DrawFont(out, characterPosition, LoadFont(size, color, 0), color, '|');
 	}
 
 	return bytesDrawn;
@@ -665,7 +692,7 @@ void DrawStringWithColors(const Surface &out, string_view fmt, DrawStringFormatA
 
 	characterPosition.y += BaseLineOffset[size];
 
-	Art *font = nullptr;
+	Font *font = nullptr;
 	std::array<uint8_t, 256> *kerning = nullptr;
 
 	char32_t prev = U'\0';
@@ -726,15 +753,15 @@ void DrawStringWithColors(const Surface &out, string_view fmt, DrawStringFormatA
 			}
 		}
 
-		DrawArt(out, characterPosition, font, frame);
+		DrawFont(out, characterPosition, font, color, frame);
 		characterPosition.x += (*kerning)[frame] + spacing;
 		prev = next;
 	}
 
 	if (HasAnyOf(flags, UiFlags::PentaCursor)) {
-		CelDrawTo(out, characterPosition + Displacement { 0, lineHeight - BaseLineOffset[size] }, *pSPentSpn2Cels, PentSpn2Spin());
+		Cl2Draw(out, characterPosition + Displacement { 0, lineHeight - BaseLineOffset[size] }, CelSprite { *pSPentSpn2Cels }, PentSpn2Spin());
 	} else if (HasAnyOf(flags, UiFlags::TextCursor) && GetAnimationFrame(2, 500) != 0) {
-		DrawArt(out, characterPosition, LoadFont(size, color, 0), '|');
+		DrawFont(out, characterPosition, LoadFont(size, color, 0), color, '|');
 	}
 }
 

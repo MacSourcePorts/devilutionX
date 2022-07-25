@@ -5,6 +5,7 @@
  */
 #pragma once
 
+#include "mpq/mpq_writer.hpp"
 #include "player.h"
 #include "utils/attributes.h"
 
@@ -23,7 +24,7 @@ void LoadHotkeys();
 void LoadHeroItems(Player &player);
 /**
  * @brief Remove invalid inventory items from the inventory grid
- * @param pnum The id of the player
+ * @param player The player to remove invalid items from
  */
 void RemoveEmptyInventory(Player &player);
 
@@ -32,13 +33,14 @@ void RemoveEmptyInventory(Player &player);
  * @param firstflag Can be set to false if we are simply reloading the current game
  */
 void LoadGame(bool firstflag);
-void SaveHotkeys();
-void SaveHeroItems(Player &player);
-void SaveGameData();
+void SaveHotkeys(MpqWriter &saveWriter);
+void SaveHeroItems(MpqWriter &saveWriter, Player &player);
+void SaveGameData(MpqWriter &saveWriter);
 void SaveGame();
-void SaveLevel();
+void SaveLevel(MpqWriter &saveWriter);
 void LoadLevel();
+void ConvertLevels(MpqWriter &saveWriter);
 void LoadStash();
-void SaveStash();
+void SaveStash(MpqWriter &stashWriter);
 
 } // namespace devilution

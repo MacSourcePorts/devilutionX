@@ -10,7 +10,7 @@
 
 namespace devilution {
 
-extern BYTE sgbNetUpdateRate;
+extern uint8_t sgbNetUpdateRate;
 extern size_t gdwMsgLenTbl[MAX_PLRS];
 extern uint32_t gdwTurnsInTransit;
 extern uintptr_t glpMsgTbl[MAX_PLRS];
@@ -33,8 +33,7 @@ void nthread_ignore_mutex(bool bStart);
  */
 bool nthread_has_500ms_passed();
 /**
- * @brief Calculates the progress in time to the next game tick
- * @return Progress as a fraction (0.0f to 1.0f)
+ * @brief Updates the progress in time to the next game tick
  */
 void nthread_UpdateProgressToNextGameTick();
 

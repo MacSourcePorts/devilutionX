@@ -9,7 +9,7 @@
 #include "error.h"
 
 #include "DiabloUI/ui_flags.hpp"
-#include "engine/render/cel_render.hpp"
+#include "engine/render/cl2_render.hpp"
 #include "engine/render/text_render.hpp"
 #include "panels/info_box.hpp"
 #include "stores.h"
@@ -111,7 +111,7 @@ void InitDiabloMsg(diablo_message e)
 	InitDiabloMsg(LanguageTranslate(MsgStrings[e]));
 }
 
-void InitDiabloMsg(const std::string &msg)
+void InitDiabloMsg(string_view msg)
 {
 	if (DiabloMessages.size() >= MAX_SEND_STR_LEN)
 		return;
@@ -119,7 +119,7 @@ void InitDiabloMsg(const std::string &msg)
 	if (std::find(DiabloMessages.begin(), DiabloMessages.end(), msg) != DiabloMessages.end())
 		return;
 
-	DiabloMessages.push_back(msg);
+	DiabloMessages.push_back(std::string(msg));
 	if (DiabloMessages.size() == 1)
 		InitNextLines();
 }
@@ -141,31 +141,33 @@ void ClrDiabloMsg()
 
 void DrawDiabloMsg(const Surface &out)
 {
-	int dialogStartY = ((gnScreenHeight - PANEL_HEIGHT) / 2) - (ErrorWindowHeight / 2) + 9;
+	auto &uiRectanglePosition = GetUIRectangle().position;
+	int dialogStartY = ((gnScreenHeight - GetMainPanel().size.height) / 2) - (ErrorWindowHeight / 2) + 9;
 
-	CelDrawTo(out, { PANEL_X + 101, dialogStartY }, *pSTextSlidCels, 0);
-	CelDrawTo(out, { PANEL_X + 101, dialogStartY + ErrorWindowHeight - 6 }, *pSTextSlidCels, 1);
-	CelDrawTo(out, { PANEL_X + 527, dialogStartY + ErrorWindowHeight - 6 }, *pSTextSlidCels, 2);
-	CelDrawTo(out, { PANEL_X + 527, dialogStartY }, *pSTextSlidCels, 3);
+	CelSprite sprite { *pSTextSlidCels };
+	Cl2Draw(out, { uiRectanglePosition.x + 101, dialogStartY }, sprite, 0);
+	Cl2Draw(out, { uiRectanglePosition.x + 101, dialogStartY + ErrorWindowHeight - 6 }, sprite, 1);
+	Cl2Draw(out, { uiRectanglePosition.x + 527, dialogStartY + ErrorWindowHeight - 6 }, sprite, 2);
+	Cl2Draw(out, { uiRectanglePosition.x + 527, dialogStartY }, sprite, 3);
 
-	int sx = PANEL_X + 109;
+	int sx = uiRectanglePosition.x + 109;
 	for (int i = 0; i < 35; i++) {
-		CelDrawTo(out, { sx, dialogStartY }, *pSTextSlidCels, 4);
-		CelDrawTo(out, { sx, dialogStartY + ErrorWindowHeight - 6 }, *pSTextSlidCels, 6);
+		Cl2Draw(out, { sx, dialogStartY }, sprite, 4);
+		Cl2Draw(out, { sx, dialogStartY + ErrorWindowHeight - 6 }, sprite, 6);
 		sx += 12;
 	}
 	int drawnYborder = 12;
 	while ((drawnYborder + 12) < ErrorWindowHeight) {
-		CelDrawTo(out, { PANEL_X + 101, dialogStartY + drawnYborder }, *pSTextSlidCels, 5);
-		CelDrawTo(out, { PANEL_X + 527, dialogStartY + drawnYborder }, *pSTextSlidCels, 7);
+		Cl2Draw(out, { uiRectanglePosition.x + 101, dialogStartY + drawnYborder }, sprite, 5);
+		Cl2Draw(out, { uiRectanglePosition.x + 527, dialogStartY + drawnYborder }, sprite, 7);
 		drawnYborder += 12;
 	}
 
-	DrawHalfTransparentRectTo(out, PANEL_X + 104, dialogStartY - 8, 432, ErrorWindowHeight);
+	DrawHalfTransparentRectTo(out, uiRectanglePosition.x + 104, dialogStartY - 8, 432, ErrorWindowHeight);
 
 	int lineNumber = 0;
 	for (auto &line : TextLines) {
-		DrawString(out, line, { { PANEL_X + 109, dialogStartY + 12 + lineNumber * LineHeight }, { LineWidth, LineHeight } }, UiFlags::AlignCenter, 1, LineHeight);
+		DrawString(out, line, { { uiRectanglePosition.x + 109, dialogStartY + 12 + lineNumber * LineHeight }, { LineWidth, LineHeight } }, UiFlags::AlignCenter, 1, LineHeight);
 		lineNumber += 1;
 	}
 

@@ -9,10 +9,13 @@
 #include "control.h"
 #include "cursor.h"
 #include "engine/point.hpp"
-#include "engine/render/cel_render.hpp"
+#include "engine/render/cl2_render.hpp"
 #include "gmenu.h"
 #include "inv.h"
 #include "itemlabels.h"
+#include "options.h"
+#include "qol/stash.h"
+#include "utils/format_int.hpp"
 #include "utils/language.h"
 #include "utils/stdcompat/string_view.hpp"
 
@@ -31,7 +34,6 @@ std::vector<ItemLabel> labelQueue;
 bool altPressed = false;
 bool isLabelHighlighted = false;
 std::array<std::optional<int>, ITEMTYPES> labelCenterOffsets;
-bool invertHighlightToggle = false;
 
 const int BorderX = 4;               // minimal horizontal space between labels
 const int BorderY = 2;               // minimal vertical space between labels
@@ -43,7 +45,7 @@ const int Height = 11 + MarginY * 2; // going above 13 scatters labels of items 
 
 void ToggleItemLabelHighlight()
 {
-	invertHighlightToggle = !invertHighlightToggle;
+	sgOptions.Gameplay.showItemLabels.SetValue(!*sgOptions.Gameplay.showItemLabels);
 }
 
 void AltPressed(bool pressed)
@@ -58,7 +60,7 @@ bool IsItemLabelHighlighted()
 
 bool IsHighlightingLabelsEnabled()
 {
-	return altPressed != invertHighlightToggle;
+	return altPressed != *sgOptions.Gameplay.showItemLabels;
 }
 
 void AddItemToLabelQueue(int id, int x, int y)
@@ -69,7 +71,7 @@ void AddItemToLabelQueue(int id, int x, int y)
 
 	std::string textOnGround;
 	if (item._itype == ItemType::Gold) {
-		textOnGround = fmt::format(_("{:d} gold"), item._ivalue);
+		textOnGround = fmt::format(fmt::runtime(_("{:s} gold")), FormatInteger(item._ivalue));
 	} else {
 		textOnGround = item._iIdentified ? item._iIName : item._iName;
 	}
@@ -78,13 +80,13 @@ void AddItemToLabelQueue(int id, int x, int y)
 	nameWidth += MarginX * 2;
 	int index = ItemCAnimTbl[item._iCurs];
 	if (!labelCenterOffsets[index]) {
-		std::pair<int, int> itemBounds = MeasureSolidHorizontalBounds(*item.AnimInfo.celSprite, item.AnimInfo.CurrentFrame);
+		std::pair<int, int> itemBounds = Cl2MeasureSolidHorizontalBounds(*item.AnimInfo.celSprite, item.AnimInfo.currentFrame);
 		labelCenterOffsets[index].emplace((itemBounds.first + itemBounds.second) / 2);
 	}
 
 	x += *labelCenterOffsets[index];
 	y -= TILE_HEIGHT;
-	if (!zoomflag) {
+	if (*sgOptions.Graphics.zoom) {
 		x *= 2;
 		y *= 2;
 	}
@@ -94,11 +96,11 @@ void AddItemToLabelQueue(int id, int x, int y)
 
 bool IsMouseOverGameArea()
 {
-	if ((invflag || sbookflag) && GetRightPanel().Contains(MousePosition))
+	if ((IsRightPanelOpen()) && GetRightPanel().contains(MousePosition))
 		return false;
-	if ((chrflag || QuestLogIsOpen) && GetLeftPanel().Contains(MousePosition))
+	if ((IsLeftPanelOpen()) && GetLeftPanel().contains(MousePosition))
 		return false;
-	if (GetMainPanel().Contains(MousePosition))
+	if (GetMainPanel().contains(MousePosition))
 		return false;
 
 	return true;
