@@ -13,18 +13,10 @@ set(libdevilutionx_SRCS
   debug.cpp
   diablo.cpp
   doom.cpp
-  drlg_l1.cpp
-  drlg_l2.cpp
-  drlg_l3.cpp
-  drlg_l4.cpp
-  dthread.cpp
-  dx.cpp
   encrypt.cpp
   engine.cpp
   error.cpp
-  engine/assets.cpp
   gamemenu.cpp
-  gendung.cpp
   gmenu.cpp
   help.cpp
   hwcursor.cpp
@@ -49,28 +41,22 @@ set(libdevilutionx_SRCS
   objects.cpp
   options.cpp
   pack.cpp
-  palette.cpp
-  path.cpp
   pfile.cpp
   player.cpp
   plrmsg.cpp
   portal.cpp
   quests.cpp
   restrict.cpp
-  scrollrt.cpp
-  setmaps.cpp
   sha.cpp
   spelldat.cpp
   spells.cpp
   stores.cpp
   sync.cpp
   textdat.cpp
-  themes.cpp
   tmsg.cpp
-  town.cpp
   towners.cpp
   track.cpp
-  trigs.cpp
+
   controls/axis_direction.cpp
   controls/controller.cpp
   controls/controller_motion.cpp
@@ -80,72 +66,105 @@ set(libdevilutionx_SRCS
   controls/menu_controls.cpp
   controls/modifier_hints.cpp
   controls/plrctrls.cpp
-  engine/animationinfo.cpp
-  engine/demomode.cpp
-  engine/direction.cpp
-  engine/load_cel.cpp
-  engine/random.cpp
-  engine/render/automap_render.cpp
-  engine/render/cel_render.cpp
-  engine/render/cl2_render.cpp
-  engine/render/dun_render.cpp
-  engine/render/text_render.cpp
-  engine/surface.cpp
-  engine/trn.cpp
-  mpq/mpq_reader.cpp
-  mpq/mpq_sdl_rwops.cpp
-  mpq/mpq_writer.cpp
-  qol/autopickup.cpp
-  qol/chatlog.cpp
-  qol/monhealthbar.cpp
-  qol/stash.cpp
-  qol/xpbar.cpp
-  qol/itemlabels.cpp
-  utils/console.cpp
-  utils/display.cpp
-  utils/file_util.cpp
-  utils/language.cpp
-  utils/logged_fstream.cpp
-  utils/paths.cpp
-  utils/sdl_bilinear_scale.cpp
-  utils/sdl_thread.cpp
-  utils/utf8.cpp
-  DiabloUI/art.cpp
-  DiabloUI/art_draw.cpp
+
   DiabloUI/button.cpp
   DiabloUI/credits.cpp
   DiabloUI/credits_lines.cpp
   DiabloUI/diabloui.cpp
   DiabloUI/dialogs.cpp
-  DiabloUI/errorart.cpp
   DiabloUI/mainmenu.cpp
   DiabloUI/progress.cpp
   DiabloUI/scrollbar.cpp
-  DiabloUI/settingsmenu.cpp
   DiabloUI/selconn.cpp
   DiabloUI/selgame.cpp
   DiabloUI/selhero.cpp
   DiabloUI/selok.cpp
   DiabloUI/selstart.cpp
   DiabloUI/selyesno.cpp
+  DiabloUI/settingsmenu.cpp
   DiabloUI/support_lines.cpp
   DiabloUI/title.cpp
-  panels/charpanel.cpp
-  panels/info_box.cpp
-  panels/mainpanel.cpp
-  panels/spell_book.cpp
-  panels/spell_icons.cpp
-  panels/spell_list.cpp
+
   dvlnet/abstract_net.cpp
   dvlnet/base.cpp
   dvlnet/cdwrap.cpp
   dvlnet/frame_queue.cpp
   dvlnet/loopback.cpp
   dvlnet/packet.cpp
+
+  engine/actor_position.cpp
+  engine/animationinfo.cpp
+  engine/assets.cpp
+  engine/direction.cpp
+  engine/dx.cpp
+  engine/load_cel.cpp
+  engine/load_cl2.cpp
+  engine/load_clx.cpp
+  engine/load_pcx.cpp
+  engine/palette.cpp
+  engine/path.cpp
+  engine/random.cpp
+  engine/surface.cpp
+  engine/trn.cpp
+
+  engine/render/automap_render.cpp
+  engine/render/clx_render.cpp
+  engine/render/dun_render.cpp
+  engine/render/scrollrt.cpp
+  engine/render/text_render.cpp
+
+  levels/crypt.cpp
+  levels/drlg_l1.cpp
+  levels/drlg_l2.cpp
+  levels/drlg_l3.cpp
+  levels/drlg_l4.cpp
+  levels/gendung.cpp
+  levels/setmaps.cpp
+  levels/themes.cpp
+  levels/town.cpp
+  levels/trigs.cpp
+
+  miniwin/misc_msg.cpp
+
+  mpq/mpq_reader.cpp
+  mpq/mpq_sdl_rwops.cpp
+  mpq/mpq_writer.cpp
+
+  panels/charpanel.cpp
+  panels/info_box.cpp
+  panels/mainpanel.cpp
+  panels/spell_book.cpp
+  panels/spell_icons.cpp
+  panels/spell_list.cpp
+
+  platform/locale.cpp
+
+  qol/autopickup.cpp
+  qol/chatlog.cpp
+  qol/itemlabels.cpp
+  qol/monhealthbar.cpp
+  qol/stash.cpp
+  qol/xpbar.cpp
+
   storm/storm_net.cpp
   storm/storm_svid.cpp
-  miniwin/misc_msg.cpp
-  platform/locale.cpp)
+
+  utils/cel_to_clx.cpp
+  utils/cl2_to_clx.cpp
+  utils/console.cpp
+  utils/display.cpp
+  utils/file_util.cpp
+  utils/format_int.cpp
+  utils/language.cpp
+  utils/logged_fstream.cpp
+  utils/paths.cpp
+  utils/pcx.cpp
+  utils/pcx_to_clx.cpp
+  utils/sdl_bilinear_scale.cpp
+  utils/sdl_thread.cpp
+  utils/str_cat.cpp
+  utils/surface_to_clx.cpp
+  utils/utf8.cpp)
 
 if(IOS)
   list(APPEND libdevilutionx_SRCS platform/ios/ios_paths.m)
@@ -155,14 +174,18 @@ if(USE_SDL1)
   list(APPEND libdevilutionx_SRCS utils/sdl2_to_1_2_backports.cpp)
 endif()
 
+if(NOT DISABLE_DEMOMODE)
+  list(APPEND libdevilutionx_SRCS engine/demomode.cpp)
+endif()
+
 if(NOSOUND)
   list(APPEND libdevilutionx_SRCS
     effects_stubs.cpp
-    sound_stubs.cpp)
+    engine/sound_stubs.cpp)
 else()
   list(APPEND libdevilutionx_SRCS
     effects.cpp
-    sound.cpp
+    engine/sound.cpp
     utils/push_aulib_decoder.cpp
     utils/soundsample.cpp)
 endif()
@@ -229,7 +252,8 @@ target_link_libraries(libdevilutionx PUBLIC
   PKWare
   libmpq
   libsmackerdec
-  simpleini
+  simpleini::simpleini
+  tl
   hoehrmann_utf8
 )
 
@@ -243,7 +267,7 @@ if(NOT NONET)
 endif()
 
 if(NOT NOSOUND)
-  target_link_libraries(libdevilutionx PUBLIC SDL_audiolib)
+  target_link_libraries(libdevilutionx PUBLIC SDL_audiolib::SDL_audiolib)
 endif()
 
 if(NOT NONET AND NOT DISABLE_ZERO_TIER)

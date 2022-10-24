@@ -5,22 +5,25 @@
 #include <cstdint>
 #include <memory>
 
+#include <fmt/core.h>
+
 #include "appfat.h"
 #include "diablo.h"
 #include "engine/assets.hpp"
 #include "utils/static_vector.hpp"
 #include "utils/stdcompat/cstddef.hpp"
+#include "utils/str_cat.hpp"
 
 namespace devilution {
 
 class SFile {
 public:
-	explicit SFile(const char *path)
+	explicit SFile(const char *path, bool isOptional = false)
 	{
 		handle_ = OpenAsset(path);
 		if (handle_ == nullptr) {
-			if (!gbQuietMode) {
-				app_fatal("Failed to open file:\n%s\n\n%s", path, SDL_GetError());
+			if (!HeadlessMode && !isOptional) {
+				app_fatal(StrCat("Failed to open file:\n", path, "\n\n", SDL_GetError()));
 			}
 		}
 	}
@@ -58,7 +61,7 @@ void LoadFileInMem(const char *path, T *data)
 		return;
 	const std::size_t fileLen = file.Size();
 	if ((fileLen % sizeof(T)) != 0)
-		app_fatal("File size does not align with type\n%s", path);
+		app_fatal(StrCat("File size does not align with type\n", path));
 	file.Read(reinterpret_cast<byte *>(data), fileLen);
 }
 
@@ -69,6 +72,16 @@ void LoadFileInMem(const char *path, T *data, std::size_t count)
 	if (!file.Ok())
 		return;
 	file.Read(reinterpret_cast<byte *>(data), count * sizeof(T));
+}
+
+template <typename T>
+bool LoadOptionalFileInMem(const char *path, T *data, std::size_t count)
+{
+	SFile file { path, true };
+	if (!file.Ok())
+		return false;
+	file.Read(reinterpret_cast<byte *>(data), count * sizeof(T));
+	return true;
 }
 
 template <typename T, std::size_t N>
@@ -91,7 +104,7 @@ std::unique_ptr<T[]> LoadFileInMem(const char *path, std::size_t *numRead = null
 		return nullptr;
 	const std::size_t fileLen = file.Size();
 	if ((fileLen % sizeof(T)) != 0)
-		app_fatal("File size does not align with type\n%s", path);
+		app_fatal(StrCat("File size does not align with type\n", path));
 
 	if (numRead != nullptr)
 		*numRead = fileLen / sizeof(T);
@@ -118,7 +131,7 @@ struct MultiFileLoader {
 	/**
 	 * @param numFiles number of files to read
 	 * @param pathFn a function that returns the path for the given index
-	 * @param outOffsets a buffer index for the start of each file will be written here
+	 * @param outOffsets a buffer index for the start of each file will be written here, then the total file size at the end.
 	 * @param filterFn a function that returns whether to load a file for the given index
 	 * @return std::unique_ptr<byte[]> the buffer with all the files
 	 */
@@ -129,20 +142,21 @@ struct MultiFileLoader {
 		StaticVector<SFile, MaxFiles> files;
 		StaticVector<uint32_t, MaxFiles> sizes;
 		size_t totalSize = 0;
-		for (size_t i = 0; i < numFiles; ++i) {
+		for (size_t i = 0, j = 0; i < numFiles; ++i) {
 			if (!filterFn(i))
 				continue;
 			const size_t size = files.emplace_back(pathFn(i)).Size();
 			sizes.emplace_back(static_cast<uint32_t>(size));
-			outOffsets[i] = static_cast<uint32_t>(totalSize);
+			outOffsets[j] = static_cast<uint32_t>(totalSize);
 			totalSize += size;
+			++j;
 		}
+		outOffsets[files.size()] = totalSize;
 		std::unique_ptr<byte[]> buf { new byte[totalSize] };
-		size_t j = 0;
-		for (size_t i = 0; i < numFiles; ++i) {
+		for (size_t i = 0, j = 0; i < numFiles; ++i) {
 			if (!filterFn(i))
 				continue;
-			files[j].Read(&buf[outOffsets[i]], sizes[j]);
+			files[j].Read(&buf[outOffsets[j]], sizes[j]);
 			++j;
 		}
 		return buf;

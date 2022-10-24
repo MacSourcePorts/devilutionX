@@ -2,14 +2,14 @@
 #include <memory>
 #include <vector>
 
-#include "DiabloUI/art.h"
-#include "DiabloUI/art_draw.h"
 #include "DiabloUI/credits_lines.h"
 #include "DiabloUI/diabloui.h"
 #include "DiabloUI/support_lines.h"
 #include "control.h"
 #include "controls/input.h"
 #include "controls/menu_controls.h"
+#include "engine/load_clx.hpp"
+#include "engine/render/clx_render.hpp"
 #include "engine/render/text_render.hpp"
 #include "hwcursor.hpp"
 #include "utils/display.h"
@@ -63,8 +63,8 @@ public:
 
 	~CreditsRenderer()
 	{
-		ArtBackgroundWidescreen.Unload();
-		ArtBackground.Unload();
+		ArtBackgroundWidescreen = std::nullopt;
+		ArtBackground = std::nullopt;
 	}
 
 	void Render();
@@ -94,8 +94,10 @@ void CreditsRenderer::Render()
 	prev_offset_y_ = offsetY;
 
 	SDL_FillRect(DiabloUiSurface(), nullptr, 0x000000);
-	DrawArt({ PANEL_LEFT - 320, UI_OFFSET_Y }, &ArtBackgroundWidescreen);
-	DrawArt({ PANEL_LEFT, UI_OFFSET_Y }, &ArtBackground);
+	const Point uiPosition = GetUIRectangle().position;
+	if (ArtBackgroundWidescreen)
+		RenderClxSprite(Surface(DiabloUiSurface()), (*ArtBackgroundWidescreen)[0], uiPosition - Displacement { 320, 0 });
+	RenderClxSprite(Surface(DiabloUiSurface()), (*ArtBackground)[0], uiPosition);
 
 	const std::size_t linesBegin = std::max(offsetY / LINE_H, 0);
 	const std::size_t linesEnd = std::min(linesBegin + MAX_VISIBLE_LINES, linesToRender.size());
@@ -107,15 +109,15 @@ void CreditsRenderer::Render()
 	}
 
 	SDL_Rect viewport = VIEWPORT;
-	viewport.x += PANEL_LEFT;
-	viewport.y += UI_OFFSET_Y;
+	viewport.x += uiPosition.x;
+	viewport.y += uiPosition.y;
 	ScaleOutputRect(&viewport);
 	SDL_SetClipRect(DiabloUiSurface(), &viewport);
 
 	// We use unscaled coordinates for calculation throughout.
-	Sint16 destY = UI_OFFSET_Y + VIEWPORT.y - (offsetY - linesBegin * LINE_H);
+	Sint16 destY = uiPosition.y + VIEWPORT.y - (offsetY - linesBegin * LINE_H);
 	for (std::size_t i = linesBegin; i < linesEnd; ++i, destY += LINE_H) {
-		Sint16 destX = PANEL_LEFT + VIEWPORT.x + 31;
+		Sint16 destX = uiPosition.x + VIEWPORT.x + 31;
 
 		auto &lineContent = linesToRender[i];
 
@@ -166,7 +168,7 @@ bool TextDialog(char const *const *text, std::size_t textLines)
 
 bool UiCreditsDialog()
 {
-	LoadArt("ui_art\\creditsw.pcx", &ArtBackgroundWidescreen);
+	ArtBackgroundWidescreen = LoadOptionalClx("ui_art\\creditsw.clx");
 	LoadBackgroundArt("ui_art\\credits.pcx");
 
 	return TextDialog(CreditLines, CreditLinesSize);
@@ -175,10 +177,10 @@ bool UiCreditsDialog()
 bool UiSupportDialog()
 {
 	if (gbIsHellfire) {
-		LoadArt("ui_art\\supportw.pcx", &ArtBackgroundWidescreen);
+		ArtBackgroundWidescreen = LoadOptionalClx("ui_art\\supportw.clx");
 		LoadBackgroundArt("ui_art\\support.pcx");
 	} else {
-		LoadArt("ui_art\\creditsw.pcx", &ArtBackgroundWidescreen);
+		ArtBackgroundWidescreen = LoadOptionalClx("ui_art\\creditsw.clx");
 		LoadBackgroundArt("ui_art\\credits.pcx");
 	}
 

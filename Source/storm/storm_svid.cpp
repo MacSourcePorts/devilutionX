@@ -10,10 +10,10 @@
 #include "utils/push_aulib_decoder.h"
 #endif
 
-#include "dx.h"
 #include "engine/assets.hpp"
+#include "engine/dx.h"
+#include "engine/palette.h"
 #include "options.h"
-#include "palette.h"
 #include "utils/aulib.hpp"
 #include "utils/display.h"
 #include "utils/log.hpp"

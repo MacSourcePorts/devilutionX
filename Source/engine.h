@@ -36,7 +36,6 @@
 #include "engine/point.hpp"
 #include "engine/size.hpp"
 #include "engine/surface.hpp"
-#include "miniwin/miniwin.h"
 #include "utils/stdcompat/cstddef.hpp"
 
 #define TILE_WIDTH 64
@@ -119,5 +118,11 @@ Direction GetDirection(Point start, Point destination);
  * @return Returns Width2
  */
 int CalculateWidth2(int width);
+
+inline int GetAnimationFrame(int frames, int fps = 60)
+{
+	int frame = (SDL_GetTicks() / fps) % frames;
+	return frame > frames ? 0 : frame;
+}
 
 } // namespace devilution

@@ -1,3 +1,6 @@
+#if (defined(_WIN64) || defined(_WIN32)) && defined(__GNUC__)
+#define SDL_MAIN_HANDLED
+#endif
 #include <SDL.h>
 #include <SDL_main.h>
 
@@ -12,6 +15,9 @@
 #ifdef __vita__
 #include "platform/vita/network.h"
 #include "platform/vita/random.hpp"
+#endif
+#ifdef NXDK
+#include <nxdk/mount.h>
 #endif
 #ifdef GPERF_HEAP_MAIN
 #include <gperftools/heap-profiler.h>
@@ -39,6 +45,9 @@ extern "C" int main(int argc, char **argv)
 #ifdef __vita__
 	vita_enable_network();
 	randombytes_vitarandom_init();
+#endif
+#ifdef NXDK
+	nxMountDrive('E', "\\Device\\Harddisk0\\Partition1\\");
 #endif
 #ifdef GPERF_HEAP_MAIN
 	HeapProfilerStart("main");

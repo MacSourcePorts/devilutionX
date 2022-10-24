@@ -38,13 +38,13 @@ void InitPortals()
 	}
 }
 
-void SetPortalStats(int i, bool o, int x, int y, int lvl, dungeon_type lvltype)
+void SetPortalStats(int i, bool o, int x, int y, int lvl, dungeon_type lvltype, bool isSetLevel)
 {
 	Portals[i].open = o;
 	Portals[i].position = { x, y };
 	Portals[i].level = lvl;
 	Portals[i].ltype = lvltype;
-	Portals[i].setlvl = false;
+	Portals[i].setlvl = isSetLevel;
 }
 
 void AddWarpMissile(int i, Point position)
@@ -55,7 +55,7 @@ void AddWarpMissile(int i, Point position)
 	if (missile != nullptr) {
 		SetMissDir(*missile, 1);
 
-		if (currlevel != 0)
+		if (leveltype != DTYPE_TOWN)
 			missile->_mlid = AddLight(missile->position.tile, 15);
 	}
 
@@ -67,7 +67,7 @@ void SyncPortals()
 	for (int i = 0; i < MAXPORTAL; i++) {
 		if (!Portals[i].open)
 			continue;
-		if (currlevel == 0)
+		if (leveltype == DTYPE_TOWN)
 			AddWarpMissile(i, WarpDrop[i]);
 		else {
 			int lvl = currlevel;
@@ -103,10 +103,10 @@ void DeactivatePortal(int i)
 
 bool PortalOnLevel(int i)
 {
-	if (Portals[i].level == currlevel)
+	if (Portals[i].setlvl == setlevel && Portals[i].level == setlevel ? static_cast<int>(setlvlnum) : currlevel)
 		return true;
 
-	return currlevel == 0;
+	return leveltype == DTYPE_TOWN;
 }
 
 void RemovePortalMissile(int id)
@@ -131,10 +131,10 @@ void SetCurrentPortal(int p)
 
 void GetPortalLevel()
 {
-	if (currlevel != 0) {
+	if (leveltype != DTYPE_TOWN) {
 		setlevel = false;
 		currlevel = 0;
-		Players[MyPlayerId].plrlevel = 0;
+		MyPlayer->setLevel(0);
 		leveltype = DTYPE_TOWN;
 		return;
 	}
@@ -143,12 +143,12 @@ void GetPortalLevel()
 		setlevel = true;
 		setlvlnum = (_setlevels)Portals[portalindex].level;
 		currlevel = Portals[portalindex].level;
-		Players[MyPlayerId].plrlevel = setlvlnum;
+		MyPlayer->setLevel(setlvlnum);
 		leveltype = Portals[portalindex].ltype;
 	} else {
 		setlevel = false;
 		currlevel = Portals[portalindex].level;
-		Players[MyPlayerId].plrlevel = currlevel;
+		MyPlayer->setLevel(currlevel);
 		leveltype = Portals[portalindex].ltype;
 	}
 
@@ -160,7 +160,7 @@ void GetPortalLevel()
 
 void GetPortalLvlPos()
 {
-	if (currlevel == 0) {
+	if (leveltype == DTYPE_TOWN) {
 		ViewPosition = WarpDrop[portalindex] + Displacement { 1, 1 };
 	} else {
 		ViewPosition = Portals[portalindex].position;

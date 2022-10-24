@@ -10,6 +10,9 @@
 #include <cstdint>
 
 #include "lighting.h"
+#ifdef _DEBUG
+#include "miniwin/misc_msg.h"
+#endif
 #include "options.h"
 #include "utils/attributes.h"
 
@@ -25,7 +28,7 @@ namespace {
  * Each tile type has its own encoding but they all encode data in the order
  * of bottom-to-top (bottom row first).
  */
-enum class TileType {
+enum class TileType : uint8_t {
 	/**
 	 * 🮆 A 32x32 square. Stored as an array of pixels.
 	 */
@@ -345,50 +348,12 @@ const std::uint32_t LeftFoliageMask[TILE_HEIGHT] = {
 	0x00000000,
 };
 
-inline int CountLeadingZeros(std::uint32_t mask)
-{
-	// Note: This function assumes that the argument is not zero,
-	// which means there is at least one bit set.
-	static_assert(
-	    sizeof(std::uint32_t) == sizeof(uint32_t),
-	    "CountLeadingZeros: std::uint32_t must be 32bits");
-#if defined(__GNUC__) || defined(__clang__)
-	return __builtin_clz(mask);
-#else
-	// Count the number of leading zeros using binary search.
-	int n = 0;
-	if ((mask & 0xFFFF0000) == 0)
-		n += 16, mask <<= 16;
-	if ((mask & 0xFF000000) == 0)
-		n += 8, mask <<= 8;
-	if ((mask & 0xF0000000) == 0)
-		n += 4, mask <<= 4;
-	if ((mask & 0xC0000000) == 0)
-		n += 2, mask <<= 2;
-	if ((mask & 0x80000000) == 0)
-		n += 1;
-	return n;
-#endif
-}
-
-template <typename F>
-DVL_ALWAYS_INLINE DVL_ATTRIBUTE_HOT void ForEachSetBit(std::uint32_t mask, const F &f)
-{
-	int i = 0;
-	while (mask != 0) {
-		int z = CountLeadingZeros(mask);
-		i += z, mask <<= z;
-		for (; mask & 0x80000000; i++, mask <<= 1)
-			f(i);
-	}
-}
-
-enum class TransparencyType {
+enum class TransparencyType : uint8_t {
 	Solid,
 	Blended,
 };
 
-enum class LightType {
+enum class LightType : uint8_t {
 	FullyDark,
 	PartiallyLit,
 	FullyLit,
@@ -1121,7 +1086,7 @@ DVL_ATTRIBUTE_HOT void RenderTileType(TileType tile, std::uint8_t *dst, int dstP
 const std::uint32_t *GetMask(TileType tile)
 {
 #ifdef _DEBUG
-	if (GetAsyncKeyState(DVL_VK_MENU)) {
+	if ((SDL_GetModState() & KMOD_ALT) != 0) {
 		return &SolidMask[TILE_HEIGHT - 1];
 	}
 #endif
@@ -1131,14 +1096,12 @@ const std::uint32_t *GetMask(TileType tile)
 			return &WallMaskFullyTrasparent[TILE_HEIGHT - 1];
 		}
 		if (arch_draw_type == 1 && tile != TileType::LeftTriangle) {
-			const auto c = block_lvid[level_piece_id];
-			if (c == 1 || c == 3) {
+			if (TileHasAny(level_piece_id, TileProperties::TransparentLeft)) {
 				return &LeftMaskTransparent[TILE_HEIGHT - 1];
 			}
 		}
 		if (arch_draw_type == 2 && tile != TileType::RightTriangle) {
-			const auto c = block_lvid[level_piece_id];
-			if (c == 2 || c == 3) {
+			if (TileHasAny(level_piece_id, TileProperties::TransparentRight)) {
 				return &RightMaskTransparent[TILE_HEIGHT - 1];
 			}
 		}

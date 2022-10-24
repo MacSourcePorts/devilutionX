@@ -5,7 +5,7 @@
 
 #include "./console.h"
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(NXDK)
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX 1
 #define UNICODE 1
@@ -165,9 +165,9 @@ void SDL_LogMessageV(int category, SDL_LogPriority priority, const char *fmt, va
 	if (static_cast<int>(priority) < 0 || priority >= SDL_NUM_LOG_PRIORITIES || priority < SDL_LogGetPriority(category))
 		return;
 
-	::devilution::printInConsole("%s: ", SDL_priority_prefixes[priority]);
-	::devilution::printInConsoleV(fmt, ap);
-	::devilution::printInConsole("\n");
+	::devilution::printfInConsole("%s: ", SDL_priority_prefixes[priority]);
+	::devilution::vprintfInConsole(fmt, ap);
+	::devilution::printNewlineInConsole();
 }
 
 namespace {
@@ -505,7 +505,7 @@ Sint64 SDL_RWsize(SDL_RWops *context)
 	return end - begin;
 }
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(NXDK)
 
 namespace {
 

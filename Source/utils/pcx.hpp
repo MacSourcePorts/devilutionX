@@ -1,6 +1,9 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+
+#include <SDL.h>
 
 namespace devilution {
 
@@ -24,5 +27,9 @@ struct PCXHeader {
 	uint16_t VscreenSize;
 	uint8_t Filler[54];
 };
+
+static constexpr size_t PcxHeaderSize = 128;
+
+bool LoadPcxMeta(SDL_RWops *handle, int &width, int &height, uint8_t &bpp);
 
 } // namespace devilution

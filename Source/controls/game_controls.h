@@ -8,6 +8,13 @@
 
 namespace devilution {
 
+enum class GamepadLayout : uint8_t {
+	Generic,
+	Nintendo,
+	PlayStation,
+	Xbox,
+};
+
 enum GameActionType : uint8_t {
 	GameActionType_NONE,
 	GameActionType_USE_HEALTH_POTION,
@@ -21,20 +28,10 @@ enum GameActionType : uint8_t {
 	GameActionType_TOGGLE_SPELL_BOOK,
 	GameActionType_TOGGLE_QUEST_LOG,
 	GameActionType_SEND_KEY,
-	GameActionType_SEND_MOUSE_CLICK,
 };
 
 struct GameActionSendKey {
-	Uint32 vk_code;
-	bool up;
-};
-
-struct GameActionSendMouseClick {
-	enum Button : uint8_t {
-		LEFT,
-		RIGHT,
-	};
-	Button button;
+	uint32_t vk_code;
 	bool up;
 };
 
@@ -57,15 +54,8 @@ struct GameAction {
 	{
 	}
 
-	GameAction(GameActionSendMouseClick send_mouse_click)
-	    : type(GameActionType_SEND_MOUSE_CLICK)
-	    , send_mouse_click(send_mouse_click)
-	{
-	}
-
 	union {
 		GameActionSendKey send_key;
-		GameActionSendMouseClick send_mouse_click;
 	};
 };
 

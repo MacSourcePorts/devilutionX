@@ -64,49 +64,53 @@ void ClearReadiedSpell(Player &player)
 	}
 }
 
-void PlacePlayer(int pnum)
+void PlacePlayer(Player &player)
 {
-	auto &player = Players[pnum];
-	Point newPosition = {};
+	if (!player.isOnActiveLevel())
+		return;
 
-	if (player.plrlevel == currlevel) {
+	Point newPosition = [&]() {
+		Point okPosition = {};
+
 		for (int i = 0; i < 8; i++) {
-			newPosition = player.position.tile + Displacement { plrxoff2[i], plryoff2[i] };
-			if (PosOkPlayer(player, newPosition)) {
-				break;
-			}
+			okPosition = player.position.tile + Displacement { plrxoff2[i], plryoff2[i] };
+			if (PosOkPlayer(player, okPosition))
+				return okPosition;
 		}
 
-		if (!PosOkPlayer(player, newPosition)) {
-			bool done = false;
+		for (int max = 1, min = -1; min > -50; max++, min--) {
+			for (int y = min; y <= max; y++) {
+				okPosition.y = player.position.tile.y + y;
 
-			int min = -1;
-			for (int max = 1; min > -50 && !done; max++, min--) {
-				for (int y = min; y <= max && !done; y++) {
-					newPosition.y = player.position.tile.y + y;
+				for (int x = min; x <= max; x++) {
+					okPosition.x = player.position.tile.x + x;
 
-					for (int x = min; x <= max && !done; x++) {
-						newPosition.x = player.position.tile.x + x;
-
-						if (PosOkPlayer(player, newPosition)) {
-							done = true;
-						}
-					}
+					if (PosOkPlayer(player, okPosition))
+						return okPosition;
 				}
 			}
 		}
 
-		player.position.tile = newPosition;
+		return okPosition;
+	}();
 
-		dPlayer[newPosition.x][newPosition.y] = pnum + 1;
+	player.position.tile = newPosition;
 
-		if (pnum == MyPlayerId) {
-			ViewPosition = newPosition;
-		}
+	dPlayer[newPosition.x][newPosition.y] = player.getId() + 1;
+
+	if (&player == MyPlayer) {
+		ViewPosition = newPosition;
 	}
 }
 
 } // namespace
+
+bool IsValidSpell(spell_id spl)
+{
+	return spl > SPL_NULL
+	    && spl <= SPL_LAST
+	    && (spl <= SPL_LASTDIABLO || gbIsHellfire);
+}
 
 bool IsWallSpell(spell_id spl)
 {
@@ -123,7 +127,7 @@ bool TargetsMonster(spell_id id)
 	    || id == SPL_WAVE;
 }
 
-int GetManaAmount(Player &player, spell_id sn)
+int GetManaAmount(const Player &player, spell_id sn)
 {
 	int ma; // mana amount
 
@@ -131,7 +135,7 @@ int GetManaAmount(Player &player, spell_id sn)
 	int adj = 0;
 
 	// spell level
-	int sl = std::max(player._pSplLvl[sn] + player._pISplLvlAdd - 1, 0);
+	int sl = std::max(player.GetSpellLevel(sn) - 1, 0);
 
 	if (sl > 0) {
 		adj = sl * spelldata[sn].sManaAdj;
@@ -167,33 +171,26 @@ int GetManaAmount(Player &player, spell_id sn)
 	return ma;
 }
 
-void UseMana(int id, spell_id sn)
+void ConsumeSpell(Player &player, spell_id sn)
 {
-	int ma; // mana cost
-
-	if (id != MyPlayerId)
-		return;
-
-	auto &myPlayer = Players[MyPlayerId];
-
-	switch (myPlayer._pSplType) {
+	switch (player.executedSpell.spellType) {
 	case RSPLTYPE_SKILL:
 	case RSPLTYPE_INVALID:
 		break;
 	case RSPLTYPE_SCROLL:
-		RemoveScroll(myPlayer);
+		ConsumeScroll(player);
 		break;
 	case RSPLTYPE_CHARGES:
-		UseStaffCharge(myPlayer);
+		ConsumeStaffCharge(player);
 		break;
 	case RSPLTYPE_SPELL:
 #ifdef _DEBUG
 		if (DebugGodMode)
 			break;
 #endif
-		ma = GetManaAmount(myPlayer, sn);
-		myPlayer._pMana -= ma;
-		myPlayer._pManaBase -= ma;
+		int ma = GetManaAmount(player, sn);
+		player._pMana -= ma;
+		player._pManaBase -= ma;
 		drawmanaflag = true;
 		break;
 	}
@@ -206,7 +203,7 @@ void EnsureValidReadiedSpell(Player &player)
 	}
 }
 
-SpellCheckResult CheckSpell(int id, spell_id sn, spell_type st, bool manaonly)
+SpellCheckResult CheckSpell(const Player &player, spell_id sn, spell_type st, bool manaonly)
 {
 #ifdef _DEBUG
 	if (DebugGodMode)
@@ -221,11 +218,10 @@ SpellCheckResult CheckSpell(int id, spell_id sn, spell_type st, bool manaonly)
 		return SpellCheckResult::Success;
 	}
 
-	if (GetSpellLevel(id, sn) <= 0) {
+	if (player.GetSpellLevel(sn) <= 0) {
 		return SpellCheckResult::Fail_Level0;
 	}
 
-	auto &player = Players[id];
 	if (player._pMana < GetManaAmount(player, sn)) {
 		return SpellCheckResult::Fail_NoMana;
 	}
@@ -235,19 +231,20 @@ SpellCheckResult CheckSpell(int id, spell_id sn, spell_type st, bool manaonly)
 
 void CastSpell(int id, spell_id spl, int sx, int sy, int dx, int dy, int spllvl)
 {
-	Direction dir = Players[id]._pdir;
+	Player &player = Players[id];
+	Direction dir = player._pdir;
 	if (IsWallSpell(spl)) {
-		dir = Players[id].tempDirection;
+		dir = player.tempDirection;
 	}
 
-	for (int i = 0; spelldata[spl].sMissiles[i] != MIS_NULL && i < 3; i++) {
+	for (int i = 0; i < 3 && spelldata[spl].sMissiles[i] != MIS_NULL; i++) {
 		AddMissile({ sx, sy }, { dx, dy }, dir, spelldata[spl].sMissiles[i], TARGET_MONSTERS, id, 0, spllvl);
 	}
 
 	if (spl == SPL_TOWN) {
-		UseMana(id, SPL_TOWN);
+		ConsumeSpell(player, SPL_TOWN);
 	} else if (spl == SPL_CBOLT) {
-		UseMana(id, SPL_CBOLT);
+		ConsumeSpell(player, SPL_CBOLT);
 
 		for (int i = (spllvl / 2) + 3; i > 0; i--) {
 			AddMissile({ sx, sy }, { dx, dy }, dir, MIS_CBOLT, TARGET_MONSTERS, id, 0, spllvl);
@@ -255,20 +252,14 @@ void CastSpell(int id, spell_id spl, int sx, int sy, int dx, int dy, int spllvl)
 	}
 }
 
-void DoResurrect(int pnum, uint16_t rid)
+void DoResurrect(int pnum, Player &target)
 {
-	if ((DWORD)pnum >= MAX_PLRS || rid >= MAX_PLRS) {
-		return;
-	}
-
-	auto &target = Players[rid];
-
 	AddMissile(target.position.tile, target.position.tile, Direction::South, MIS_RESURRECTBEAM, TARGET_MONSTERS, pnum, 0, 0);
 
 	if (target._pHitPoints != 0)
 		return;
 
-	if (rid == MyPlayerId) {
+	if (&target == MyPlayer) {
 		MyPlayerIsDead = false;
 		gamemenu_off();
 		drawhpflag = true;
@@ -278,7 +269,7 @@ void DoResurrect(int pnum, uint16_t rid)
 	ClrPlrPath(target);
 	target.destAction = ACTION_NONE;
 	target._pInvincible = false;
-	PlacePlayer(rid);
+	PlacePlayer(target);
 
 	int hp = 10 << 6;
 	if (target._pMaxHPBase < (10 << 6)) {
@@ -292,8 +283,8 @@ void DoResurrect(int pnum, uint16_t rid)
 
 	CalcPlrInv(target, true);
 
-	if (target.plrlevel == currlevel) {
-		StartStand(rid, target._pdir);
+	if (target.isOnActiveLevel()) {
+		StartStand(target, target._pdir);
 	} else {
 		target._pmode = PM_STAND;
 	}

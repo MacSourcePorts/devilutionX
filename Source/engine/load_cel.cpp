@@ -1,17 +1,22 @@
 #include "engine/load_cel.hpp"
 
+#ifdef DEBUG_CEL_TO_CL2_SIZE
+#include <iostream>
+#endif
+
 #include "engine/load_file.hpp"
+#include "utils/cel_to_clx.hpp"
 
 namespace devilution {
 
-OwnedCelSprite LoadCel(const char *pszName, uint16_t width)
+OwnedClxSpriteListOrSheet LoadCelListOrSheet(const char *pszName, PointerOrValue<uint16_t> widthOrWidths)
 {
-	return OwnedCelSprite(LoadFileInMem(pszName), width);
-}
-
-OwnedCelSprite LoadCel(const char *pszName, const uint16_t *widths)
-{
-	return OwnedCelSprite(LoadFileInMem(pszName), widths);
+	size_t size;
+	std::unique_ptr<uint8_t[]> data = LoadFileInMem<uint8_t>(pszName, &size);
+#ifdef DEBUG_CEL_TO_CL2_SIZE
+	std::cout << pszName;
+#endif
+	return CelToClx(data.get(), size, widthOrWidths);
 }
 
 } // namespace devilution

@@ -17,6 +17,7 @@ namespace devilution {
 
 extern int refreshDelay; // Screen refresh rate in nanoseconds
 extern SDL_Window *window;
+extern SDL_Window *ghMainWnd;
 extern SDL_Renderer *renderer;
 #ifndef USE_SDL1
 extern SDLTextureUniquePtr texture;
@@ -38,6 +39,8 @@ bool IsFullScreen();
 // SDL2, no upscale: Window surface.
 // SDL2, upscale: Renderer texture surface.
 SDL_Surface *GetOutputSurface();
+
+bool IsDoubleBuffered();
 
 // Whether the output surface requires software scaling.
 // Always returns false on SDL2.

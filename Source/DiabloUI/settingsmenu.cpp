@@ -3,8 +3,10 @@
 #include "DiabloUI/diabloui.h"
 #include "DiabloUI/scrollbar.h"
 #include "control.h"
+#include "controls/remap_keyboard.h"
 #include "engine/render/text_render.hpp"
 #include "hwcursor.hpp"
+#include "miniwin/misc_msg.h"
 #include "options.h"
 #include "utils/language.h"
 #include "utils/utf8.hpp"
@@ -22,7 +24,7 @@ std::vector<std::unique_ptr<UiItemBase>> vecDialog;
 std::vector<OptionEntryBase *> vecOptions;
 OptionEntryBase *selectedOption = nullptr;
 
-enum class ShownMenuType {
+enum class ShownMenuType : uint8_t {
 	Settings,
 	ListOption,
 	KeyInput,
@@ -35,7 +37,7 @@ char optionDescription[512];
 Rectangle rectList;
 Rectangle rectDescription;
 
-enum class SpecialMenuEntry {
+enum class SpecialMenuEntry : int8_t {
 	None = -1,
 	PreviousMenu = -2,
 	UnbindKey = -3,
@@ -73,8 +75,8 @@ void CleanUpSettingsUI()
 	vecDialog.clear();
 	vecOptions.clear();
 
-	ArtBackground.Unload();
-	ArtBackgroundWidescreen.Unload();
+	ArtBackground = std::nullopt;
+	ArtBackgroundWidescreen = std::nullopt;
 	UnloadScrollBar();
 }
 
@@ -155,7 +157,7 @@ void ItemSelected(int value)
 			break;
 		case SpecialMenuEntry::UnbindKey:
 			auto *pOptionKey = static_cast<KeymapperOptions::Action *>(selectedOption);
-			pOptionKey->SetValue(DVL_VK_INVALID);
+			pOptionKey->SetValue(SDLK_UNKNOWN);
 			vecDialogItems[IndexKeyInput]->m_text = selectedOption->GetValueDescription().data();
 			break;
 		}
@@ -247,19 +249,21 @@ void UiSettingsMenu()
 	do {
 		endMenu = false;
 
-		LoadBackgroundArt("ui_art\\black.pcx");
+		UiLoadBlackBackground();
 		LoadScrollBar();
 		UiAddBackground(&vecDialog);
 		UiAddLogo(&vecDialog);
 
-		rectList = { { PANEL_LEFT + 50, (UI_OFFSET_Y + 204) }, { 540, 208 } };
-		rectDescription = { { PANEL_LEFT + 24, rectList.position.y + rectList.size.height + 16 }, { 590, 35 } };
+		const Rectangle &uiRectangle = GetUIRectangle();
+
+		rectList = { uiRectangle.position + Displacement { 50, 204 }, Size { 540, 208 } };
+		rectDescription = { rectList.position + Displacement { -26, rectList.size.height + 16 }, Size { 590, 35 } };
 
 		optionDescription[0] = '\0';
 
 		string_view titleText = shownMenu == ShownMenuType::Settings ? _("Settings") : selectedOption->GetName();
-		vecDialog.push_back(std::make_unique<UiArtText>(titleText.data(), MakeSdlRect(PANEL_LEFT, UI_OFFSET_Y + 161, PANEL_WIDTH, 35), UiFlags::FontSize30 | UiFlags::ColorUiSilver | UiFlags::AlignCenter, 8));
-		vecDialog.push_back(std::make_unique<UiScrollbar>(&ArtScrollBarBackground, &ArtScrollBarThumb, &ArtScrollBarArrow, MakeSdlRect(rectList.position.x + rectList.size.width + 5, rectList.position.y, 25, rectList.size.height)));
+		vecDialog.push_back(std::make_unique<UiArtText>(titleText.data(), MakeSdlRect(uiRectangle.position.x, uiRectangle.position.y + 161, uiRectangle.size.width, 35), UiFlags::FontSize30 | UiFlags::ColorUiSilver | UiFlags::AlignCenter, 8));
+		vecDialog.push_back(std::make_unique<UiScrollbar>((*ArtScrollBarBackground)[0], (*ArtScrollBarThumb)[0], *ArtScrollBarArrow, MakeSdlRect(rectList.position.x + rectList.size.width + 5, rectList.position.y, 25, rectList.size.height)));
 		vecDialog.push_back(std::make_unique<UiArtText>(optionDescription, MakeSdlRect(rectDescription), UiFlags::FontSize12 | UiFlags::ColorUiSilverDark | UiFlags::AlignCenter, 1, IsSmallFontTall() ? 22 : 18));
 
 		size_t itemToSelect = 1;
@@ -309,27 +313,28 @@ void UiSettingsMenu()
 			eventHandler = [](SDL_Event &event) {
 				if (SelectedItem != IndexKeyInput)
 					return false;
-				int key = DVL_VK_INVALID;
+				uint32_t key = SDLK_UNKNOWN;
 				switch (event.type) {
-				case SDL_KEYDOWN:
-					key = TranslateSdlKey(event.key.keysym);
-					break;
+				case SDL_KEYDOWN: {
+					SDL_Keycode keycode = event.key.keysym.sym;
+					remap_keyboard_key(&keycode);
+					if (key >= SDLK_a && key <= SDLK_z) {
+						key -= 'a' - 'A';
+					}
+					key = static_cast<uint32_t>(keycode);
+				} break;
 				case SDL_MOUSEBUTTONDOWN:
 					switch (event.button.button) {
 					case SDL_BUTTON_MIDDLE:
-						key = DVL_VK_MBUTTON;
-						break;
 					case SDL_BUTTON_X1:
-						key = DVL_VK_X1BUTTON;
-						break;
 					case SDL_BUTTON_X2:
-						key = DVL_VK_X2BUTTON;
+						key = event.button.button | KeymapperMouseButtonMask;
 						break;
 					}
 					break;
 				}
 				// Ignore unknown keys
-				if (key == DVL_VK_INVALID || key == -1)
+				if (key == SDLK_UNKNOWN)
 					return false;
 				auto *pOptionKey = static_cast<KeymapperOptions::Action *>(selectedOption);
 				if (!pOptionKey->SetValue(key))

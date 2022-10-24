@@ -10,9 +10,9 @@
 
 #include "engine.h"
 #include "engine/point.hpp"
-#include "miniwin/miniwin.h"
 #include "misdat.h"
 #include "monster.h"
+#include "player.h"
 #include "spelldat.h"
 
 namespace devilution {
@@ -66,7 +66,7 @@ struct MissilePosition {
  *               |
  *      N  NNE   NE  ENE  E
  */
-enum class Direction16 {
+enum class Direction16 : uint8_t {
 	South,
 	South_SouthWest,
 	SouthWest,
@@ -85,6 +85,12 @@ enum class Direction16 {
 	South_SouthEast,
 };
 
+enum class MissileSource : uint8_t {
+	Player,
+	Monster,
+	Trap,
+};
+
 struct Missile {
 	/** Type of projectile */
 	missile_id _mitype;
@@ -94,10 +100,14 @@ struct Missile {
 	bool _miDelFlag; // Indicate whether the missile should be deleted
 	uint8_t _miAnimType;
 	MissileDataFlags _miAnimFlags;
-	const byte *_miAnimData;
+	OptionalClxSpriteList _miAnimData;
 	int _miAnimDelay; // Tick length of each frame in the current animation
 	int _miAnimLen;   // Number of frames in current animation
+
+	// TODO: This field is no longer used and is always equal to
+	// (*_miAnimData)[0].width()
 	uint16_t _miAnimWidth;
+
 	int16_t _miAnimWidth2;
 	int _miAnimCnt; // Increases by one each game tick, counting how close we are to _pAnimDelay
 	int _miAnimAdd;
@@ -132,17 +142,45 @@ struct Missile {
 	{
 		return _misource == -1;
 	}
+
+	[[nodiscard]] Player *sourcePlayer()
+	{
+		if (IsNoneOf(_micaster, TARGET_BOTH, TARGET_MONSTERS) || _misource == -1)
+			return nullptr;
+		return &Players[_misource];
+	}
+
+	[[nodiscard]] Monster *sourceMonster()
+	{
+		if (_micaster != TARGET_PLAYERS || _misource == -1)
+			return nullptr;
+		return &Monsters[_misource];
+	}
+
+	[[nodiscard]] bool isSameSource(Missile &missile)
+	{
+		return sourceType() == missile.sourceType() && _misource == missile._misource;
+	}
+
+	MissileSource sourceType()
+	{
+		if (_misource == -1)
+			return MissileSource::Trap;
+		if (_micaster == TARGET_PLAYERS)
+			return MissileSource::Monster;
+		return MissileSource::Player;
+	}
 };
 
 extern std::list<Missile> Missiles;
 extern bool MissilePreFlag;
 
-void GetDamageAmt(int i, int *mind, int *maxd);
-int GetSpellLevel(int playerId, spell_id sn);
+void GetDamageAmt(spell_id i, int *mind, int *maxd);
 
 /**
  * @brief Returns the direction a vector from p1(x1, y1) to p2(x2, y2) is pointing to.
  *
+ * @code{.unparsed}
  *      W  sW  SW   Sw  S
  *              ^
  *     nW       |       Se
@@ -152,15 +190,14 @@ int GetSpellLevel(int playerId, spell_id sn);
  *     Nw       |       sE
  *              |
  *      N  Ne  NE   nE  E
+ * @endcode
  *
- * @param x1 the x coordinate of p1
- * @param y1 the y coordinate of p1
- * @param x2 the x coordinate of p2
- * @param y2 the y coordinate of p2
+ * @param p1 The point from which the vector starts.
+ * @param p2 The point from which the vector ends.
  * @return the direction of the p1->p2 vector
  */
 Direction16 GetDirection16(Point p1, Point p2);
-bool MonsterTrapHit(int m, int mindam, int maxdam, int dist, missile_id t, bool shift);
+bool MonsterTrapHit(int monsterId, int mindam, int maxdam, int dist, missile_id t, bool shift);
 bool PlayerMHit(int pnum, Monster *monster, int dist, int mind, int maxd, missile_id mtype, bool shift, int earflag, bool *blocked);
 
 /**
@@ -397,5 +434,9 @@ void MI_Rportal(Missile &missile);
 void ProcessMissiles();
 void missiles_process_charge();
 void RedoMissileFlags();
+
+#ifdef BUILD_TESTING
+void TestRotateBlockedMissile(Missile &missile);
+#endif
 
 } // namespace devilution

@@ -1,5 +1,9 @@
 #pragma once
 
+#ifdef BUILD_TESTING
+#include <ostream>
+#endif
+
 namespace devilution {
 
 struct Size {
@@ -37,6 +41,11 @@ struct Size {
 		return *this;
 	}
 
+	constexpr Size &operator-=(const int factor)
+	{
+		return *this += -factor;
+	}
+
 	constexpr Size &operator*=(const int factor)
 	{
 		width *= factor;
@@ -64,6 +73,12 @@ struct Size {
 		return a;
 	}
 
+	constexpr friend Size operator-(Size a, const int factor)
+	{
+		a -= factor;
+		return a;
+	}
+
 	constexpr friend Size operator*(Size a, const int factor)
 	{
 		a *= factor;
@@ -75,6 +90,19 @@ struct Size {
 		a /= factor;
 		return a;
 	}
+
+#ifdef BUILD_TESTING
+	/**
+	 * @brief Format sizes nicely in test failure messages
+	 * @param stream output stream, expected to have overloads for int and char*
+	 * @param size Object to display
+	 * @return the stream, to allow chaining
+	 */
+	friend std::ostream &operator<<(std::ostream &stream, const Size &size)
+	{
+		return stream << "(width: " << size.width << ", height: " << size.height << ")";
+	}
+#endif
 };
 
 } // namespace devilution

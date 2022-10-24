@@ -1,7 +1,8 @@
 #include "towners.h"
 
 #include "cursor.h"
-#include "engine/cel_header.hpp"
+#include "engine/clx_sprite.hpp"
+#include "engine/load_cel.hpp"
 #include "engine/load_file.hpp"
 #include "engine/random.hpp"
 #include "inv.h"
@@ -12,7 +13,7 @@
 namespace devilution {
 namespace {
 
-std::unique_ptr<byte[]> CowCels;
+OptionalOwnedClxSpriteSheet CowSprites;
 int CowMsg;
 int CowClicks;
 
@@ -27,9 +28,9 @@ struct TownerData {
 	void (*talk)(Player &player, Towner &towner);
 };
 
-void NewTownerAnim(Towner &towner, byte *pAnim, uint8_t numFrames, int delay)
+void NewTownerAnim(Towner &towner, ClxSpriteList sprites, uint8_t numFrames, int delay)
 {
-	towner._tAnimData = pAnim;
+	towner.anim.emplace(sprites);
 	towner._tAnimLen = numFrames;
 	towner._tAnimFrame = 0;
 	towner._tAnimCnt = 0;
@@ -52,8 +53,9 @@ void InitTownerInfo(int i, const TownerData &townerData)
 
 void LoadTownerAnimations(Towner &towner, const char *path, int frames, int delay)
 {
-	towner.data = LoadFileInMem(path);
-	NewTownerAnim(towner, towner.data.get(), frames, delay);
+	towner.ownedAnim = std::nullopt;
+	towner.ownedAnim = LoadCel(path, towner._tAnimWidth);
+	NewTownerAnim(towner, *towner.ownedAnim, frames, delay);
 }
 
 /**
@@ -75,7 +77,7 @@ void InitSmith(Towner &towner, const TownerData &townerData)
 	};
 	towner.animOrder = AnimOrder;
 	towner.animOrderSize = sizeof(AnimOrder);
-	LoadTownerAnimations(towner, "Towners\\Smith\\SmithN.CEL", 16, 3);
+	LoadTownerAnimations(towner, "towners\\smith\\smithn.cel", 16, 3);
 	towner.name = _("Griswold the Blacksmith");
 }
 
@@ -97,7 +99,7 @@ void InitBarOwner(Towner &towner, const TownerData &townerData)
 	};
 	towner.animOrder = AnimOrder;
 	towner.animOrderSize = sizeof(AnimOrder);
-	LoadTownerAnimations(towner, "Towners\\TwnF\\TwnFN.CEL", 16, 3);
+	LoadTownerAnimations(towner, "towners\\twnf\\twnfn.cel", 16, 3);
 	towner.name = _("Ogden the Tavern owner");
 }
 
@@ -106,7 +108,7 @@ void InitTownDead(Towner &towner, const TownerData &townerData)
 	towner._tAnimWidth = 96;
 	towner.animOrder = nullptr;
 	towner.animOrderSize = 0;
-	LoadTownerAnimations(towner, "Towners\\Butch\\Deadguy.CEL", 8, 6);
+	LoadTownerAnimations(towner, "towners\\butch\\deadguy.cel", 8, 6);
 	towner.name = _("Wounded Townsman");
 }
 
@@ -128,7 +130,7 @@ void InitWitch(Towner &towner, const TownerData &townerData)
 	};
 	towner.animOrder = AnimOrder;
 	towner.animOrderSize = sizeof(AnimOrder);
-	LoadTownerAnimations(towner, "Towners\\TownWmn1\\Witch.CEL", 19, 6);
+	LoadTownerAnimations(towner, "towners\\townwmn1\\witch.cel", 19, 6);
 	towner.name = _("Adria the Witch");
 }
 
@@ -137,7 +139,7 @@ void InitBarmaid(Towner &towner, const TownerData &townerData)
 	towner._tAnimWidth = 96;
 	towner.animOrder = nullptr;
 	towner.animOrderSize = 0;
-	LoadTownerAnimations(towner, "Towners\\TownWmn1\\WmnN.CEL", 18, 6);
+	LoadTownerAnimations(towner, "towners\\townwmn1\\wmnn.cel", 18, 6);
 	towner.name = _("Gillian the Barmaid");
 }
 
@@ -146,7 +148,7 @@ void InitBoy(Towner &towner, const TownerData &townerData)
 	towner._tAnimWidth = 96;
 	towner.animOrder = nullptr;
 	towner.animOrderSize = 0;
-	LoadTownerAnimations(towner, "Towners\\TownBoy\\PegKid1.CEL", 20, 6);
+	LoadTownerAnimations(towner, "towners\\townboy\\pegkid1.cel", 20, 6);
 	towner.name = _("Wirt the Peg-legged boy");
 }
 
@@ -168,7 +170,7 @@ void InitHealer(Towner &towner, const TownerData &townerData)
 	};
 	towner.animOrder = AnimOrder;
 	towner.animOrderSize = sizeof(AnimOrder);
-	LoadTownerAnimations(towner, "Towners\\Healer\\Healer.CEL", 20, 6);
+	LoadTownerAnimations(towner, "towners\\healer\\healer.cel", 20, 6);
 	towner.name = _("Pepin the Healer");
 }
 
@@ -185,7 +187,7 @@ void InitTeller(Towner &towner, const TownerData &townerData)
 	};
 	towner.animOrder = AnimOrder;
 	towner.animOrderSize = sizeof(AnimOrder);
-	LoadTownerAnimations(towner, "Towners\\Strytell\\Strytell.CEL", 25, 3);
+	LoadTownerAnimations(towner, "towners\\strytell\\strytell.cel", 25, 3);
 	towner.name = _("Cain the Elder");
 }
 
@@ -201,7 +203,7 @@ void InitDrunk(Towner &towner, const TownerData &townerData)
 	};
 	towner.animOrder = AnimOrder;
 	towner.animOrderSize = sizeof(AnimOrder);
-	LoadTownerAnimations(towner, "Towners\\Drunk\\TwnDrunk.CEL", 18, 3);
+	LoadTownerAnimations(towner, "towners\\drunk\\twndrunk.cel", 18, 3);
 	towner.name = _("Farnham the Drunk");
 }
 
@@ -210,8 +212,8 @@ void InitCows(Towner &towner, const TownerData &townerData)
 	towner._tAnimWidth = 128;
 	towner.animOrder = nullptr;
 	towner.animOrderSize = 0;
-	CelGetDirectionFrames(CowCels.get(), towner._tNAnim);
-	NewTownerAnim(towner, towner._tNAnim[static_cast<size_t>(townerData.dir)], 12, 3);
+
+	NewTownerAnim(towner, (*CowSprites)[static_cast<size_t>(townerData.dir)], 12, 3);
 	towner._tAnimFrame = GenerateRnd(11);
 	towner.name = _("Cow");
 
@@ -236,15 +238,15 @@ void InitFarmer(Towner &towner, const TownerData &townerData)
 	towner._tAnimWidth = 96;
 	towner.animOrder = nullptr;
 	towner.animOrderSize = 0;
-	LoadTownerAnimations(towner, "Towners\\Farmer\\Farmrn2.CEL", 15, 3);
+	LoadTownerAnimations(towner, "towners\\farmer\\farmrn2.cel", 15, 3);
 	towner.name = _("Lester the farmer");
 }
 
 void InitCowFarmer(Towner &towner, const TownerData &townerData)
 {
-	const char *celPath = "Towners\\Farmer\\cfrmrn2.CEL";
+	const char *celPath = "towners\\farmer\\cfrmrn2.cel";
 	if (Quests[Q_JERSEY]._qactive == QUEST_DONE) {
-		celPath = "Towners\\Farmer\\mfrmrn2.CEL";
+		celPath = "towners\\farmer\\mfrmrn2.cel";
 	}
 	towner._tAnimWidth = 96;
 	towner.animOrder = nullptr;
@@ -258,7 +260,7 @@ void InitGirl(Towner &towner, const TownerData &townerData)
 	towner._tAnimWidth = 96;
 	towner.animOrder = nullptr;
 	towner.animOrderSize = 0;
-	LoadTownerAnimations(towner, "Towners\\Girl\\Girlw1.CEL", 20, 6);
+	LoadTownerAnimations(towner, "towners\\girl\\girlw1.cel", 20, 6);
 	towner.name = _("Celia");
 }
 
@@ -328,7 +330,7 @@ void TalkToBarOwner(Player &player, Towner &barOwner)
 				return;
 			}
 
-			if (bannerQuest._qvar2 == 1 && player.TryRemoveInvItemById(IDI_BANNER)) {
+			if (bannerQuest._qvar2 == 1 && RemoveInventoryItemById(player, IDI_BANNER)) {
 				bannerQuest._qactive = QUEST_DONE;
 				bannerQuest._qvar1 = 3;
 				SpawnUnique(UITEM_HARCREST, barOwner.position + Direction::SouthWest);
@@ -375,7 +377,7 @@ void TalkToBlackSmith(Player &player, Towner &blackSmith)
 				return;
 			}
 
-			if (Quests[Q_ROCK]._qvar2 == 1 && player.TryRemoveInvItemById(IDI_ROCK)) {
+			if (Quests[Q_ROCK]._qvar2 == 1 && RemoveInventoryItemById(player, IDI_ROCK)) {
 				Quests[Q_ROCK]._qactive = QUEST_DONE;
 				SpawnUnique(UITEM_INFRARING, blackSmith.position + Direction::SouthWest);
 				InitQTextMsg(TEXT_INFRA7);
@@ -395,7 +397,7 @@ void TalkToBlackSmith(Player &player, Towner &blackSmith)
 				return;
 			}
 
-			if (Quests[Q_ANVIL]._qvar2 == 1 && player.TryRemoveInvItemById(IDI_ANVIL)) {
+			if (Quests[Q_ANVIL]._qvar2 == 1 && RemoveInventoryItemById(player, IDI_ANVIL)) {
 				Quests[Q_ANVIL]._qactive = QUEST_DONE;
 				SpawnUnique(UITEM_GRISWOLD, blackSmith.position + Direction::SouthWest);
 				InitQTextMsg(TEXT_ANVIL7);
@@ -411,7 +413,7 @@ void TalkToBlackSmith(Player &player, Towner &blackSmith)
 void TalkToWitch(Player &player, Towner & /*witch*/)
 {
 	if (Quests[Q_MUSHROOM]._qactive != QUEST_NOTAVAIL) {
-		if (Quests[Q_MUSHROOM]._qactive == QUEST_INIT && player.TryRemoveInvItemById(IDI_FUNGALTM)) {
+		if (Quests[Q_MUSHROOM]._qactive == QUEST_INIT && RemoveInventoryItemById(player, IDI_FUNGALTM)) {
 			Quests[Q_MUSHROOM]._qactive = QUEST_ACTIVE;
 			Quests[Q_MUSHROOM]._qlog = true;
 			Quests[Q_MUSHROOM]._qvar1 = QS_TOMEGIVEN;
@@ -420,7 +422,7 @@ void TalkToWitch(Player &player, Towner & /*witch*/)
 		}
 		if (Quests[Q_MUSHROOM]._qactive == QUEST_ACTIVE) {
 			if (Quests[Q_MUSHROOM]._qvar1 >= QS_TOMEGIVEN && Quests[Q_MUSHROOM]._qvar1 < QS_MUSHGIVEN) {
-				if (player.TryRemoveInvItemById(IDI_MUSHROOM)) {
+				if (RemoveInventoryItemById(player, IDI_MUSHROOM)) {
 					Quests[Q_MUSHROOM]._qvar1 = QS_MUSHGIVEN;
 					QuestDialogTable[TOWN_HEALER][Q_MUSHROOM] = TEXT_MUSH3;
 					QuestDialogTable[TOWN_WITCH][Q_MUSHROOM] = TEXT_NONE;
@@ -435,12 +437,12 @@ void TalkToWitch(Player &player, Towner & /*witch*/)
 				}
 			}
 			if (Quests[Q_MUSHROOM]._qvar1 >= QS_MUSHGIVEN) {
-				if (player.HasItem(IDI_BRAIN)) {
+				if (HasInventoryItemWithId(player, IDI_BRAIN)) {
 					Quests[Q_MUSHROOM]._qmsg = TEXT_MUSH11;
 					InitQTextMsg(TEXT_MUSH11);
 					return;
 				}
-				if (player.HasItem(IDI_SPECELIX)) {
+				if (HasInventoryOrBeltItemWithId(player, IDI_SPECELIX)) {
 					InitQTextMsg(TEXT_MUSH12);
 					Quests[Q_MUSHROOM]._qactive = QUEST_DONE;
 					AllItemsList[IDI_SPECELIX].iUsable = true; /// BUGFIX: This will cause the elixir to be usable in the next game
@@ -456,7 +458,7 @@ void TalkToWitch(Player &player, Towner & /*witch*/)
 
 void TalkToBarmaid(Player &player, Towner & /*barmaid*/)
 {
-	if (!player._pLvlVisited[21] && player.HasItem(IDI_MAPOFDOOM)) {
+	if (!player._pLvlVisited[21] && HasInventoryItemWithId(player, IDI_MAPOFDOOM)) {
 		Quests[Q_GRAVE]._qactive = QUEST_ACTIVE;
 		Quests[Q_GRAVE]._qlog = true;
 		Quests[Q_GRAVE]._qmsg = TEXT_GRAVE8;
@@ -492,7 +494,7 @@ void TalkToHealer(Player &player, Towner &healer)
 		}
 	}
 	if (Quests[Q_MUSHROOM]._qactive == QUEST_ACTIVE) {
-		if (Quests[Q_MUSHROOM]._qvar1 >= QS_MUSHGIVEN && Quests[Q_MUSHROOM]._qvar1 < QS_BRAINGIVEN && player.TryRemoveInvItemById(IDI_BRAIN)) {
+		if (Quests[Q_MUSHROOM]._qvar1 >= QS_MUSHGIVEN && Quests[Q_MUSHROOM]._qvar1 < QS_BRAINGIVEN && RemoveInventoryItemById(player, IDI_BRAIN)) {
 			SpawnQuestItem(IDI_SPECELIX, healer.position + Displacement { 0, 1 }, 0, 0);
 			InitQTextMsg(TEXT_MUSH4);
 			Quests[Q_MUSHROOM]._qvar1 = QS_BRAINGIVEN;
@@ -515,7 +517,7 @@ void TalkToStoryteller(Player &player, Towner & /*storyteller*/)
 {
 	auto &betrayerQuest = Quests[Q_BETRAYER];
 	if (!gbIsMultiplayer) {
-		if (betrayerQuest._qactive == QUEST_INIT && player.TryRemoveInvItemById(IDI_LAZSTAFF)) {
+		if (betrayerQuest._qactive == QUEST_INIT && RemoveInventoryItemById(player, IDI_LAZSTAFF)) {
 			InitQTextMsg(TEXT_VILE1);
 			betrayerQuest._qlog = true;
 			betrayerQuest._qactive = QUEST_ACTIVE;
@@ -582,7 +584,7 @@ void TalkToFarmer(Player &player, Towner &farmer)
 	switch (quest._qactive) {
 	case QUEST_NOTAVAIL:
 	case QUEST_INIT:
-		if (player.HasItem(IDI_RUNEBOMB)) {
+		if (HasInventoryItemWithId(player, IDI_RUNEBOMB)) {
 			InitQTextMsg(TEXT_FARMER2);
 			quest._qactive = QUEST_ACTIVE;
 			quest._qvar1 = 1;
@@ -615,7 +617,7 @@ void TalkToFarmer(Player &player, Towner &farmer)
 			NetSendCmdQuest(true, quest);
 		break;
 	case QUEST_ACTIVE:
-		InitQTextMsg(player.HasItem(IDI_RUNEBOMB) ? TEXT_FARMER2 : TEXT_FARMER3);
+		InitQTextMsg(HasInventoryItemWithId(player, IDI_RUNEBOMB) ? TEXT_FARMER2 : TEXT_FARMER3);
 		break;
 	case QUEST_DONE:
 		InitQTextMsg(TEXT_FARMER4);
@@ -635,24 +637,24 @@ void TalkToFarmer(Player &player, Towner &farmer)
 
 void TalkToCowFarmer(Player &player, Towner &cowFarmer)
 {
-	if (player.TryRemoveInvItemById(IDI_GREYSUIT)) {
+	if (RemoveInventoryItemById(player, IDI_GREYSUIT)) {
 		InitQTextMsg(TEXT_JERSEY7);
 		return;
 	}
 
 	auto &quest = Quests[Q_JERSEY];
 
-	if (player.TryRemoveInvItemById(IDI_BROWNSUIT)) {
+	if (RemoveInventoryItemById(player, IDI_BROWNSUIT)) {
 		SpawnUnique(UITEM_BOVINE, cowFarmer.position + Direction::SouthEast);
 		InitQTextMsg(TEXT_JERSEY8);
 		quest._qactive = QUEST_DONE;
 		auto curFrame = cowFarmer._tAnimFrame;
-		LoadTownerAnimations(cowFarmer, "Towners\\Farmer\\mfrmrn2.CEL", 15, 3);
+		LoadTownerAnimations(cowFarmer, "towners\\farmer\\mfrmrn2.cel", 15, 3);
 		cowFarmer._tAnimFrame = std::min<uint8_t>(curFrame, cowFarmer._tAnimLen - 1);
 		return;
 	}
 
-	if (player.HasItem(IDI_RUNEBOMB)) {
+	if (HasInventoryItemWithId(player, IDI_RUNEBOMB)) {
 		InitQTextMsg(TEXT_JERSEY5);
 		quest._qactive = QUEST_ACTIVE;
 		quest._qvar1 = 1;
@@ -721,13 +723,13 @@ void TalkToGirl(Player &player, Towner &girl)
 {
 	auto &quest = Quests[Q_GIRL];
 
-	if (quest._qactive != QUEST_DONE && player.TryRemoveInvItemById(IDI_THEODORE)) {
+	if (quest._qactive != QUEST_DONE && RemoveInventoryItemById(player, IDI_THEODORE)) {
 		InitQTextMsg(TEXT_GIRL4);
 		CreateAmulet(girl.position, 13, true, false);
 		quest._qlog = false;
 		quest._qactive = QUEST_DONE;
 		auto curFrame = girl._tAnimFrame;
-		LoadTownerAnimations(girl, "Towners\\Girl\\Girls1.CEL", 20, 6);
+		LoadTownerAnimations(girl, "towners\\girl\\girls1.cel", 20, 6);
 		girl._tAnimFrame = std::min<uint8_t>(curFrame, girl._tAnimLen - 1);
 		if (gbIsMultiplayer)
 			NetSendCmdQuest(true, quest);
@@ -816,9 +818,9 @@ bool IsTownerPresent(_talker_id npc)
 
 void InitTowners()
 {
-	assert(CowCels == nullptr);
+	assert(!CowSprites);
 
-	CowCels = LoadFileInMem("Towners\\Animals\\Cow.CEL");
+	CowSprites.emplace(LoadCelSheet("towners\\animals\\cow.cel", 128));
 
 	int i = 0;
 	for (const auto &townerData : TownersData) {
@@ -832,11 +834,10 @@ void InitTowners()
 
 void FreeTownerGFX()
 {
-	for (auto &towner : Towners) {
-		towner.data = nullptr;
+	for (Towner &towner : Towners) {
+		towner.ownedAnim = std::nullopt;
 	}
-
-	CowCels = nullptr;
+	CowSprites = std::nullopt;
 }
 
 void ProcessTowners()
@@ -888,7 +889,7 @@ bool DebugTalkToTowner(std::string targetName)
 {
 	SetupTownStores();
 	std::transform(targetName.begin(), targetName.end(), targetName.begin(), [](unsigned char c) { return std::tolower(c); });
-	auto &myPlayer = Players[MyPlayerId];
+	Player &myPlayer = *MyPlayer;
 	for (auto &townerData : TownersData) {
 		if (!IsTownerPresent(townerData.type))
 			continue;

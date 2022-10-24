@@ -4,14 +4,16 @@
 
 #include "control.h"
 #include "engine.h"
+#include "engine/palette.h"
 #include "engine/render/text_render.hpp"
 #include "inv_iterators.hpp"
+#include "miniwin/misc_msg.h"
 #include "options.h"
-#include "palette.h"
 #include "panels/spell_icons.hpp"
 #include "player.h"
 #include "spells.h"
 #include "utils/language.h"
+#include "utils/str_cat.hpp"
 #include "utils/utf8.hpp"
 
 #define SPLROWICONLS 10
@@ -20,7 +22,7 @@ namespace devilution {
 
 namespace {
 
-void PrintSBookSpellType(const Surface &out, Point position, const std::string &text, uint8_t rectColorIndex)
+void PrintSBookSpellType(const Surface &out, Point position, string_view text, uint8_t rectColorIndex)
 {
 	Point rect { position };
 	rect += Displacement { 0, -SPLICONLENGTH + 1 };
@@ -67,7 +69,7 @@ bool GetSpellListSelection(spell_id &pSpell, spell_type &pSplType)
 {
 	pSpell = spell_id::SPL_INVALID;
 	pSplType = spell_type::RSPLTYPE_INVALID;
-	auto &myPlayer = Players[MyPlayerId];
+	Player &myPlayer = *MyPlayer;
 
 	for (auto &spellListItem : GetSpellListItems()) {
 		if (spellListItem.isSelected) {
@@ -84,11 +86,11 @@ bool GetSpellListSelection(spell_id &pSpell, spell_type &pSplType)
 
 std::optional<string_view> GetHotkeyName(spell_id spellId, spell_type spellType)
 {
-	auto &myPlayer = Players[MyPlayerId];
+	Player &myPlayer = *MyPlayer;
 	for (size_t t = 0; t < NumHotkeys; t++) {
 		if (myPlayer._pSplHotKey[t] != spellId || myPlayer._pSplTHotKey[t] != spellType)
 			continue;
-		auto quickSpellActionKey = fmt::format("QuickSpell{}", t + 1);
+		auto quickSpellActionKey = StrCat("QuickSpell", t + 1);
 		return sgOptions.Keymapper.KeyNameForAction(quickSpellActionKey);
 	}
 	return {};
@@ -98,23 +100,29 @@ std::optional<string_view> GetHotkeyName(spell_id spellId, spell_type spellType)
 
 void DrawSpell(const Surface &out)
 {
-	auto &myPlayer = Players[MyPlayerId];
+	Player &myPlayer = *MyPlayer;
 	spell_id spl = myPlayer._pRSpell;
 	spell_type st = myPlayer._pRSplType;
 
-	// BUGFIX: Move the next line into the if statement to avoid OOB (SPL_INVALID is -1) (fixed)
-	if (st == RSPLTYPE_SPELL && spl != SPL_INVALID) {
-		int tlvl = myPlayer._pISplLvlAdd + myPlayer._pSplLvl[spl];
-		if (CheckSpell(MyPlayerId, spl, st, true) != SpellCheckResult::Success)
+	if (!IsValidSpell(spl)) {
+		st = RSPLTYPE_INVALID;
+		spl = SPL_NULL;
+	}
+
+	if (st == RSPLTYPE_SPELL) {
+		int tlvl = myPlayer.GetSpellLevel(spl);
+		if (CheckSpell(*MyPlayer, spl, st, true) != SpellCheckResult::Success)
 			st = RSPLTYPE_INVALID;
 		if (tlvl <= 0)
 			st = RSPLTYPE_INVALID;
 	}
-	if (currlevel == 0 && st != RSPLTYPE_INVALID && !spelldata[spl].sTownSpell)
+
+	if (leveltype == DTYPE_TOWN && st != RSPLTYPE_INVALID && !spelldata[spl].sTownSpell)
 		st = RSPLTYPE_INVALID;
+
 	SetSpellTrans(st);
-	const int nCel = (spl != SPL_INVALID) ? SpellITbl[spl] : 26;
-	const Point position { PANEL_X + 565, PANEL_Y + 119 };
+	const int nCel = SpellITbl[spl];
+	const Point position = GetMainPanel().position + Displacement { 565, 119 };
 	DrawSpellCel(out, position, nCel);
 
 	std::optional<string_view> hotkeyName = GetHotkeyName(spl, myPlayer._pRSplType);
@@ -124,21 +132,21 @@ void DrawSpell(const Surface &out)
 
 void DrawSpellList(const Surface &out)
 {
-	InfoString.clear();
+	InfoString = {};
 	ClearPanel();
 
-	auto &myPlayer = Players[MyPlayerId];
+	Player &myPlayer = *MyPlayer;
 
 	for (auto &spellListItem : GetSpellListItems()) {
 		const spell_id spellId = spellListItem.id;
 		spell_type transType = spellListItem.type;
 		int spellLevel = 0;
 		const SpellData &spellDataItem = spelldata[static_cast<size_t>(spellListItem.id)];
-		if (currlevel == 0 && !spellDataItem.sTownSpell) {
+		if (leveltype == DTYPE_TOWN && !spellDataItem.sTownSpell) {
 			transType = RSPLTYPE_INVALID;
 		}
 		if (spellListItem.type == RSPLTYPE_SPELL) {
-			spellLevel = std::max(myPlayer._pISplLvlAdd + myPlayer._pSplLvl[spellListItem.id], 0);
+			spellLevel = myPlayer.GetSpellLevel(spellListItem.id);
 			if (spellLevel == 0)
 				transType = RSPLTYPE_INVALID;
 		}
@@ -160,48 +168,48 @@ void DrawSpellList(const Surface &out)
 		case RSPLTYPE_SKILL:
 			spellColor = PAL16_YELLOW - 46;
 			PrintSBookSpellType(out, spellListItem.location, _("Skill"), spellColor);
-			InfoString = fmt::format(_("{:s} Skill"), pgettext("spell", spellDataItem.sSkillText));
+			InfoString = fmt::format(fmt::runtime(_("{:s} Skill")), pgettext("spell", spellDataItem.sSkillText));
 			break;
 		case RSPLTYPE_SPELL:
-			if (myPlayer.plrlevel != 0) {
+			if (!myPlayer.isOnLevel(0)) {
 				spellColor = PAL16_BLUE + 5;
 			}
 			PrintSBookSpellType(out, spellListItem.location, _("Spell"), spellColor);
-			InfoString = fmt::format(_("{:s} Spell"), pgettext("spell", spellDataItem.sNameText));
+			InfoString = fmt::format(fmt::runtime(_("{:s} Spell")), pgettext("spell", spellDataItem.sNameText));
 			if (spellId == SPL_HBOLT) {
 				AddPanelString(_("Damages undead only"));
 			}
 			if (spellLevel == 0)
 				AddPanelString(_("Spell Level 0 - Unusable"));
 			else
-				AddPanelString(fmt::format(_("Spell Level {:d}"), spellLevel));
+				AddPanelString(fmt::format(fmt::runtime(_("Spell Level {:d}")), spellLevel));
 			break;
 		case RSPLTYPE_SCROLL: {
-			if (myPlayer.plrlevel != 0) {
+			if (!myPlayer.isOnLevel(0)) {
 				spellColor = PAL16_RED - 59;
 			}
 			PrintSBookSpellType(out, spellListItem.location, _("Scroll"), spellColor);
-			InfoString = fmt::format(_("Scroll of {:s}"), pgettext("spell", spellDataItem.sNameText));
+			InfoString = fmt::format(fmt::runtime(_("Scroll of {:s}")), pgettext("spell", spellDataItem.sNameText));
 			const InventoryAndBeltPlayerItemsRange items { myPlayer };
 			const int scrollCount = std::count_if(items.begin(), items.end(), [spellId](const Item &item) {
 				return item.isScrollOf(spellId);
 			});
-			AddPanelString(fmt::format(ngettext("{:d} Scroll", "{:d} Scrolls", scrollCount), scrollCount));
+			AddPanelString(fmt::format(fmt::runtime(ngettext("{:d} Scroll", "{:d} Scrolls", scrollCount)), scrollCount));
 		} break;
 		case RSPLTYPE_CHARGES: {
-			if (myPlayer.plrlevel != 0) {
+			if (!myPlayer.isOnLevel(0)) {
 				spellColor = PAL16_ORANGE + 5;
 			}
 			PrintSBookSpellType(out, spellListItem.location, _("Staff"), spellColor);
-			InfoString = fmt::format(_("Staff of {:s}"), pgettext("spell", spellDataItem.sNameText));
+			InfoString = fmt::format(fmt::runtime(_("Staff of {:s}")), pgettext("spell", spellDataItem.sNameText));
 			int charges = myPlayer.InvBody[INVLOC_HAND_LEFT]._iCharges;
-			AddPanelString(fmt::format(ngettext("{:d} Charge", "{:d} Charges", charges), charges));
+			AddPanelString(fmt::format(fmt::runtime(ngettext("{:d} Charge", "{:d} Charges", charges)), charges));
 		} break;
 		case RSPLTYPE_INVALID:
 			break;
 		}
 		if (hotkeyName) {
-			AddPanelString(fmt::format(_("Spell Hotkey {:s}"), *hotkeyName));
+			AddPanelString(fmt::format(fmt::runtime(_("Spell Hotkey {:s}")), *hotkeyName));
 		}
 	}
 }
@@ -211,12 +219,13 @@ std::vector<SpellListItem> GetSpellListItems()
 	std::vector<SpellListItem> spellListItems;
 
 	uint64_t mask;
+	const Point mainPanelPosition = GetMainPanel().position;
 
-	int x = PANEL_X + 12 + SPLICONLENGTH * SPLROWICONLS;
-	int y = PANEL_Y - 17;
+	int x = mainPanelPosition.x + 12 + SPLICONLENGTH * SPLROWICONLS;
+	int y = mainPanelPosition.y - 17;
 
 	for (int i = RSPLTYPE_SKILL; i < RSPLTYPE_INVALID; i++) {
-		auto &myPlayer = Players[MyPlayerId];
+		Player &myPlayer = *MyPlayer;
 		switch ((spell_type)i) {
 		case RSPLTYPE_SKILL:
 			mask = myPlayer._pAblSpells;
@@ -242,15 +251,15 @@ std::vector<SpellListItem> GetSpellListItems()
 			bool isSelected = (MousePosition.x >= lx && MousePosition.x < lx + SPLICONLENGTH && MousePosition.y >= ly && MousePosition.y < ly + SPLICONLENGTH);
 			spellListItems.emplace_back(SpellListItem { { x, y }, (spell_type)i, (spell_id)j, isSelected });
 			x -= SPLICONLENGTH;
-			if (x == PANEL_X + 12 - SPLICONLENGTH) {
-				x = PANEL_X + 12 + SPLICONLENGTH * SPLROWICONLS;
+			if (x == mainPanelPosition.x + 12 - SPLICONLENGTH) {
+				x = mainPanelPosition.x + 12 + SPLICONLENGTH * SPLROWICONLS;
 				y -= SPLICONLENGTH;
 			}
 		}
-		if (mask != 0 && x != PANEL_X + 12 + SPLICONLENGTH * SPLROWICONLS)
+		if (mask != 0 && x != mainPanelPosition.x + 12 + SPLICONLENGTH * SPLROWICONLS)
 			x -= SPLICONLENGTH;
-		if (x == PANEL_X + 12 - SPLICONLENGTH) {
-			x = PANEL_X + 12 + SPLICONLENGTH * SPLROWICONLS;
+		if (x == mainPanelPosition.x + 12 - SPLICONLENGTH) {
+			x = mainPanelPosition.x + 12 + SPLICONLENGTH * SPLROWICONLS;
 			y -= SPLICONLENGTH;
 		}
 	}
@@ -270,7 +279,7 @@ void SetSpell()
 
 	ClearPanel();
 
-	auto &myPlayer = Players[MyPlayerId];
+	Player &myPlayer = *MyPlayer;
 	myPlayer._pRSpell = pSpell;
 	myPlayer._pRSplType = pSplType;
 
@@ -285,7 +294,7 @@ void SetSpeedSpell(size_t slot)
 	if (!GetSpellListSelection(pSpell, pSplType)) {
 		return;
 	}
-	auto &myPlayer = Players[MyPlayerId];
+	Player &myPlayer = *MyPlayer;
 	for (size_t i = 0; i < NumHotkeys; ++i) {
 		if (myPlayer._pSplHotKey[i] == pSpell && myPlayer._pSplTHotKey[i] == pSplType)
 			myPlayer._pSplHotKey[i] = SPL_INVALID;
@@ -298,9 +307,10 @@ void ToggleSpell(size_t slot)
 {
 	uint64_t spells;
 
-	auto &myPlayer = Players[MyPlayerId];
+	Player &myPlayer = *MyPlayer;
 
-	if (myPlayer._pSplHotKey[slot] == SPL_INVALID) {
+	const spell_id spellId = myPlayer._pSplHotKey[slot];
+	if (!IsValidSpell(spellId)) {
 		return;
 	}
 
@@ -321,8 +331,7 @@ void ToggleSpell(size_t slot)
 		return;
 	}
 
-	const spell_id spellId = myPlayer._pSplHotKey[slot];
-	if (spellId != SPL_INVALID && spellId != SPL_NULL && (spells & GetSpellBitmask(spellId)) != 0) {
+	if ((spells & GetSpellBitmask(spellId)) != 0) {
 		myPlayer._pRSpell = spellId;
 		myPlayer._pRSplType = myPlayer._pSplTHotKey[slot];
 		force_redraw = 255;
@@ -332,14 +341,15 @@ void ToggleSpell(size_t slot)
 void DoSpeedBook()
 {
 	spselflag = true;
-	int xo = PANEL_X + 12 + SPLICONLENGTH * 10;
-	int yo = PANEL_Y - 17;
+	const Point mainPanelPosition = GetMainPanel().position;
+	int xo = mainPanelPosition.x + 12 + SPLICONLENGTH * 10;
+	int yo = mainPanelPosition.y - 17;
 	int x = xo + SPLICONLENGTH / 2;
 	int y = yo - SPLICONLENGTH / 2;
 
-	auto &myPlayer = Players[MyPlayerId];
+	Player &myPlayer = *MyPlayer;
 
-	if (myPlayer._pRSpell != SPL_INVALID) {
+	if (IsValidSpell(myPlayer._pRSpell)) {
 		for (int i = RSPLTYPE_SKILL; i <= RSPLTYPE_CHARGES; i++) {
 			uint64_t spells;
 			switch (i) {
@@ -364,17 +374,17 @@ void DoSpeedBook()
 						y = yo - SPLICONLENGTH / 2;
 					}
 					xo -= SPLICONLENGTH;
-					if (xo == PANEL_X + 12 - SPLICONLENGTH) {
-						xo = PANEL_X + 12 + SPLICONLENGTH * SPLROWICONLS;
+					if (xo == mainPanelPosition.x + 12 - SPLICONLENGTH) {
+						xo = mainPanelPosition.x + 12 + SPLICONLENGTH * SPLROWICONLS;
 						yo -= SPLICONLENGTH;
 					}
 				}
 				spell <<= 1ULL;
 			}
-			if (spells != 0 && xo != PANEL_X + 12 + SPLICONLENGTH * SPLROWICONLS)
+			if (spells != 0 && xo != mainPanelPosition.x + 12 + SPLICONLENGTH * SPLROWICONLS)
 				xo -= SPLICONLENGTH;
-			if (xo == PANEL_X + 12 - SPLICONLENGTH) {
-				xo = PANEL_X + 12 + SPLICONLENGTH * SPLROWICONLS;
+			if (xo == mainPanelPosition.x + 12 - SPLICONLENGTH) {
+				xo = mainPanelPosition.x + 12 + SPLICONLENGTH * SPLROWICONLS;
 				yo -= SPLICONLENGTH;
 			}
 		}

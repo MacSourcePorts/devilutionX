@@ -3,18 +3,21 @@
  *
  * Implementation of functions for managing game ticks.
  */
-
 #include "nthread.h"
+
+#include <fmt/core.h>
+
 #include "diablo.h"
 #include "engine/demomode.h"
 #include "gmenu.h"
 #include "storm/storm_net.hpp"
 #include "utils/sdl_mutex.h"
 #include "utils/sdl_thread.h"
+#include "utils/str_cat.hpp"
 
 namespace devilution {
 
-BYTE sgbNetUpdateRate;
+uint8_t sgbNetUpdateRate;
 size_t gdwMsgLenTbl[MAX_PLRS];
 uint32_t gdwTurnsInTransit;
 uintptr_t glpMsgTbl[MAX_PLRS];
@@ -26,7 +29,6 @@ float gfProgressToNextGameTick = 0.0;
 namespace {
 
 SdlMutex MemCrit;
-DWORD gdwDeltaBytesSec;
 bool nthread_should_run;
 char sgbSyncCountdown;
 uint32_t turn_upper_bit;
@@ -68,7 +70,7 @@ void nthread_terminate_game(const char *pszFcn)
 		return;
 	}
 	if (sErr != STORM_ERROR_GAME_TERMINATED && sErr != STORM_ERROR_NOT_IN_GAME) {
-		app_fatal("%s:\n%s", pszFcn, SDL_GetError());
+		app_fatal(StrCat(pszFcn, ":\n", pszFcn));
 	}
 
 	gbGameDestroyed = true;
@@ -164,7 +166,6 @@ void nthread_start(bool setTurnUpperBit)
 	uint32_t largestMsgSize = 512;
 	if (caps.maxmessagesize < 0x200)
 		largestMsgSize = caps.maxmessagesize;
-	gdwDeltaBytesSec = caps.bytessec / 4;
 	gdwLargestMsgSize = largestMsgSize;
 	gdwNormalMsgSize = caps.bytessec * sgbNetUpdateRate / 20;
 	gdwNormalMsgSize *= 3;

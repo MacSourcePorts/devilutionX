@@ -14,6 +14,7 @@
 #include "itemdat.h"
 #include "monster.h"
 #include "utils/stdcompat/optional.hpp"
+#include "utils/string_or_view.hpp"
 
 namespace devilution {
 
@@ -380,12 +381,37 @@ struct Item {
 
 	[[nodiscard]] bool isScroll() const
 	{
-		return _iMiscId == IMISC_SCROLL || _iMiscId == IMISC_SCROLLT;
+		return IsAnyOf(_iMiscId, IMISC_SCROLL, IMISC_SCROLLT);
 	}
 
 	[[nodiscard]] bool isScrollOf(spell_id spellId) const
 	{
 		return isScroll() && _iSpell == spellId;
+	}
+
+	[[nodiscard]] bool isRune() const
+	{
+		return _iMiscId > IMISC_RUNEFIRST && _iMiscId < IMISC_RUNELAST;
+	}
+
+	[[nodiscard]] bool isRuneOf(spell_id spellId) const
+	{
+		if (!isRune())
+			return false;
+		switch (_iMiscId) {
+		case IMISC_RUNEF:
+			return spellId == SPL_RUNEFIRE;
+		case IMISC_RUNEL:
+			return spellId == SPL_RUNELIGHT;
+		case IMISC_GR_RUNEL:
+			return spellId == SPL_RUNENOVA;
+		case IMISC_GR_RUNEF:
+			return spellId == SPL_RUNEIMMOLAT;
+		case IMISC_RUNES:
+			return spellId == SPL_RUNESTONE;
+		default:
+			return false;
+		}
 	}
 
 	[[nodiscard]] bool keyAttributesMatch(int32_t seed, _item_indexes itemIndex, uint16_t createInfo) const
@@ -448,7 +474,7 @@ extern bool ShowUniqueItemInfoBox;
 extern CornerStoneStruct CornerStone;
 extern bool UniqueItemFlags[128];
 
-BYTE GetOutlineColor(const Item &item, bool checkReq);
+uint8_t GetOutlineColor(const Item &item, bool checkReq);
 bool IsItemAvailable(int i);
 bool IsUniqueAvailable(int i);
 void InitItemGFX();
@@ -461,10 +487,10 @@ int GetGoldCursor(int value);
 
 /**
  * @brief Update the gold cursor on the given gold item
- * @param h The item to update
+ * @param gold The item to update
  */
 void SetPlrHandGoldCurs(Item &gold);
-void CreatePlrItems(int playerId);
+void CreatePlrItems(Player &player);
 bool ItemSpaceOk(Point position);
 int AllocateItem();
 Point GetSuperItemLoc(Point position);
@@ -495,7 +521,7 @@ void CheckIdentify(Player &player, int cii);
 void DoRepair(Player &player, int cii);
 void DoRecharge(Player &player, int cii);
 bool DoOil(Player &player, int cii);
-[[nodiscard]] std::string PrintItemPower(char plidx, const Item &item);
+[[nodiscard]] StringOrView PrintItemPower(char plidx, const Item &item);
 void DrawUniqueInfo(const Surface &out);
 void PrintItemDetails(const Item &item);
 void PrintItemDur(const Item &item);
@@ -503,7 +529,7 @@ void UseItem(int p, item_misc_id Mid, spell_id spl);
 bool UseItemOpensHive(const Item &item, Point position);
 bool UseItemOpensCrypt(const Item &item, Point position);
 void SpawnSmith(int lvl);
-void SpawnPremium(int pnum);
+void SpawnPremium(const Player &player);
 void SpawnWitch(int lvl);
 void SpawnBoy(int lvl);
 void SpawnHealer(int lvl);
@@ -534,7 +560,7 @@ std::string DebugSpawnUniqueItem(std::string itemName);
 
 extern int MaxGold;
 
-extern BYTE ItemCAnimTbl[];
+extern int8_t ItemCAnimTbl[];
 extern _sfx_id ItemInvSnds[];
 
 } // namespace devilution

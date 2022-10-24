@@ -1,15 +1,15 @@
 #include "panels/spell_icons.hpp"
 
 #include "engine/load_cel.hpp"
-#include "engine/render/cel_render.hpp"
+#include "engine/palette.h"
+#include "engine/render/clx_render.hpp"
 #include "init.h"
-#include "palette.h"
 #include "utils/stdcompat/optional.hpp"
 
 namespace devilution {
 
 namespace {
-std::optional<OwnedCelSprite> pSpellCels;
+OptionalOwnedClxSpriteList pSpellCels;
 uint8_t SplTransTbl[256];
 } // namespace
 
@@ -71,9 +71,9 @@ const char SpellITbl[] = {
 void LoadSpellIcons()
 {
 	if (!gbIsHellfire)
-		pSpellCels = LoadCel("CtrlPan\\SpelIcon.CEL", SPLICONLENGTH);
+		pSpellCels = LoadCel("ctrlpan\\spelicon.cel", SPLICONLENGTH);
 	else
-		pSpellCels = LoadCel("Data\\SpelIcon.CEL", SPLICONLENGTH);
+		pSpellCels = LoadCel("data\\spelicon.cel", SPLICONLENGTH);
 	SetSpellTrans(RSPLTYPE_SKILL);
 }
 
@@ -87,9 +87,9 @@ void DrawSpellCel(const Surface &out, Point position, int nCel)
 	DrawSpellCel(out, position, *pSpellCels, nCel);
 }
 
-void DrawSpellCel(const Surface &out, Point position, const OwnedCelSprite &sprite, int nCel)
+void DrawSpellCel(const Surface &out, Point position, const OwnedClxSpriteList &sprite, int nCel)
 {
-	CelDrawLightTo(out, position, sprite, nCel, SplTransTbl);
+	ClxDrawTRN(out, position, sprite[nCel], SplTransTbl);
 }
 
 void SetSpellTrans(spell_type t)

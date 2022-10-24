@@ -10,10 +10,11 @@
 #include "controls/axis_direction.h"
 #include "controls/controller_motion.h"
 #include "engine.h"
-#include "engine/cel_sprite.hpp"
+#include "engine/clx_sprite.hpp"
 #include "engine/load_cel.hpp"
-#include "engine/render/cel_render.hpp"
+#include "engine/render/clx_render.hpp"
 #include "engine/render/text_render.hpp"
+#include "miniwin/misc_msg.h"
 #include "options.h"
 #include "stores.h"
 #include "utils/language.h"
@@ -24,14 +25,14 @@ namespace devilution {
 
 namespace {
 
-std::optional<OwnedCelSprite> optbar_cel;
-std::optional<OwnedCelSprite> PentSpin_cel;
-std::optional<OwnedCelSprite> option_cel;
-std::optional<OwnedCelSprite> sgpLogo;
+OptionalOwnedClxSpriteList optbar_cel;
+OptionalOwnedClxSpriteList PentSpin_cel;
+OptionalOwnedClxSpriteList option_cel;
+OptionalOwnedClxSpriteList sgpLogo;
 bool mouseNavigation;
 TMenuItem *sgpCurrItem;
 int LogoAnim_tick;
-BYTE LogoAnim_frame;
+uint8_t LogoAnim_frame;
 void (*gmenu_current_option)();
 int sgCurrentMenuIdx;
 
@@ -86,7 +87,7 @@ void GmenuLeftRight(bool isRight)
 
 void GmenuClearBuffer(const Surface &out, int x, int y, int width, int height)
 {
-	BYTE *i = out.at(x, y);
+	uint8_t *i = out.at(x, y);
 	while ((height--) != 0) {
 		memset(i, 205, width);
 		i -= out.pitch();
@@ -105,21 +106,23 @@ void GmenuDrawMenuItem(const Surface &out, TMenuItem *pItem, int y)
 {
 	int w = GmenuGetLineWidth(pItem);
 	if ((pItem->dwFlags & GMENU_SLIDER) != 0) {
+		int uiPositionX = GetUIRectangle().position.x;
 		int x = 16 + w / 2;
-		CelDrawTo(out, { x + PANEL_LEFT, y + 40 }, *optbar_cel, 0);
+		ClxDraw(out, { x + uiPositionX, y + 40 }, (*optbar_cel)[0]);
 		uint16_t step = pItem->dwFlags & 0xFFF;
 		uint16_t steps = std::max<uint16_t>((pItem->dwFlags & 0xFFF000) >> 12, 2);
 		uint16_t pos = step * 256 / steps;
-		GmenuClearBuffer(out, x + 2 + PANEL_LEFT, y + 38, pos + 13, 28);
-		CelDrawTo(out, { x + 2 + pos + PANEL_LEFT, y + 38 }, *option_cel, 0);
+		GmenuClearBuffer(out, x + 2 + uiPositionX, y + 38, pos + 13, 28);
+		ClxDraw(out, { x + 2 + pos + uiPositionX, y + 38 }, (*option_cel)[0]);
 	}
 
 	int x = (gnScreenWidth - w) / 2;
 	UiFlags style = (pItem->dwFlags & GMENU_ENABLED) != 0 ? UiFlags::ColorGold : UiFlags::ColorBlack;
 	DrawString(out, _(pItem->pszStr), Point { x, y }, style | UiFlags::FontSize46, 2);
 	if (pItem == sgpCurrItem) {
-		CelDrawTo(out, { x - 54, y + 51 }, *PentSpin_cel, PentSpn2Spin());
-		CelDrawTo(out, { x + 4 + w, y + 51 }, *PentSpin_cel, PentSpn2Spin());
+		const ClxSprite sprite = (*PentSpin_cel)[PentSpn2Spin()];
+		ClxDraw(out, { x - 54, y + 51 }, sprite);
+		ClxDraw(out, { x + 4 + w, y + 51 }, sprite);
 	}
 }
 
@@ -135,10 +138,11 @@ void GameMenuMove()
 
 bool GmenuMouseNavigation()
 {
-	if (MousePosition.x < 282 + PANEL_LEFT) {
+	int uiPositionX = GetUIRectangle().position.x;
+	if (MousePosition.x < 282 + uiPositionX) {
 		return false;
 	}
-	if (MousePosition.x > 538 + PANEL_LEFT) {
+	if (MousePosition.x > 538 + uiPositionX) {
 		return false;
 	}
 	return true;
@@ -146,13 +150,14 @@ bool GmenuMouseNavigation()
 
 int GmenuGetMouseSlider()
 {
-	if (MousePosition.x < 282 + PANEL_LEFT) {
+	int uiPositionX = GetUIRectangle().position.x;
+	if (MousePosition.x < 282 + uiPositionX) {
 		return 0;
 	}
-	if (MousePosition.x > 538 + PANEL_LEFT) {
+	if (MousePosition.x > 538 + uiPositionX) {
 		return 256;
 	}
-	return MousePosition.x - 282 - PANEL_LEFT;
+	return MousePosition.x - 282 - uiPositionX;
 }
 
 } // namespace
@@ -161,11 +166,11 @@ TMenuItem *sgpCurrentMenu;
 
 void gmenu_draw_pause(const Surface &out)
 {
-	if (currlevel != 0)
+	if (leveltype != DTYPE_TOWN)
 		RedBack(out);
 	if (sgpCurrentMenu == nullptr) {
 		LightTableIndex = 0;
-		DrawString(out, _("Pause"), { { 0, 0 }, { gnScreenWidth, PANEL_TOP } }, UiFlags::FontSize46 | UiFlags::ColorGold | UiFlags::AlignCenter | UiFlags::VerticalCenter, 2);
+		DrawString(out, _("Pause"), { { 0, 0 }, { gnScreenWidth, GetMainPanel().position.y } }, UiFlags::FontSize46 | UiFlags::ColorGold | UiFlags::AlignCenter | UiFlags::VerticalCenter, 2);
 	}
 }
 
@@ -185,13 +190,17 @@ void gmenu_init_menu()
 	gmenu_current_option = nullptr;
 	sgCurrentMenuIdx = 0;
 	mouseNavigation = false;
+
+	if (HeadlessMode)
+		return;
+
 	if (gbIsHellfire)
-		sgpLogo = LoadCel("Data\\hf_logo3.CEL", 430);
+		sgpLogo = LoadCel("data\\hf_logo3.cel", 430);
 	else
-		sgpLogo = LoadCel("Data\\Diabsmal.CEL", 296);
-	PentSpin_cel = LoadCel("Data\\PentSpin.CEL", 48);
-	option_cel = LoadCel("Data\\option.CEL", 27);
-	optbar_cel = LoadCel("Data\\optbar.CEL", 287);
+		sgpLogo = LoadCel("data\\diabsmal.cel", 296);
+	PentSpin_cel = LoadCel("data\\pentspin.cel", 48);
+	option_cel = LoadCel("data\\option.cel", 27);
+	optbar_cel = LoadCel("data\\optbar.cel", 287);
 }
 
 bool gmenu_is_active()
@@ -236,8 +245,10 @@ void gmenu_draw(const Surface &out)
 				LogoAnim_tick = ticks;
 			}
 		}
-		CelDrawTo(out, { (gnScreenWidth - sgpLogo->Width()) / 2, 102 + UI_OFFSET_Y }, *sgpLogo, LogoAnim_frame);
-		int y = 110 + UI_OFFSET_Y;
+		int uiPositionY = GetUIRectangle().position.y;
+		const ClxSprite sprite = (*sgpLogo)[LogoAnim_frame];
+		ClxDraw(out, { (gnScreenWidth - sprite.width()) / 2, 102 + uiPositionY }, sprite);
+		int y = 110 + uiPositionY;
 		TMenuItem *i = sgpCurrentMenu;
 		if (sgpCurrentMenu->fnMenu != nullptr) {
 			while (i->fnMenu != nullptr) {
@@ -249,34 +260,37 @@ void gmenu_draw(const Surface &out)
 	}
 }
 
-bool gmenu_presskeys(int vkey)
+bool gmenu_presskeys(SDL_Keycode vkey)
 {
 	if (sgpCurrentMenu == nullptr)
 		return false;
 	switch (vkey) {
-	case DVL_VK_RETURN:
+	case SDLK_KP_ENTER:
+	case SDLK_RETURN:
 		if ((sgpCurrItem->dwFlags & GMENU_ENABLED) != 0) {
 			PlaySFX(IS_TITLEMOV);
 			sgpCurrItem->fnMenu(true);
 		}
 		break;
-	case DVL_VK_ESCAPE:
+	case SDLK_ESCAPE:
 		PlaySFX(IS_TITLEMOV);
 		gmenu_set_items(nullptr, nullptr);
 		break;
-	case DVL_VK_SPACE:
+	case SDLK_SPACE:
 		return false;
-	case DVL_VK_LEFT:
+	case SDLK_LEFT:
 		GmenuLeftRight(false);
 		break;
-	case DVL_VK_RIGHT:
+	case SDLK_RIGHT:
 		GmenuLeftRight(true);
 		break;
-	case DVL_VK_UP:
+	case SDLK_UP:
 		GmenuUpDown(false);
 		break;
-	case DVL_VK_DOWN:
+	case SDLK_DOWN:
 		GmenuUpDown(true);
+		break;
+	default:
 		break;
 	}
 	return true;
@@ -311,13 +325,14 @@ bool gmenu_left_mouse(bool isDown)
 	if (sgpCurrentMenu == nullptr) {
 		return false;
 	}
+	const Point uiPosition = GetUIRectangle().position;
 	if (MousePosition.y >= GetMainPanel().position.y) {
 		return false;
 	}
-	if (MousePosition.y - (117 + GetUIOffsetY()) < 0) {
+	if (MousePosition.y - (117 + uiPosition.y) < 0) {
 		return true;
 	}
-	int i = (MousePosition.y - (117 + GetUIOffsetY())) / 45;
+	int i = (MousePosition.y - (117 + uiPosition.y)) / 45;
 	if (i >= sgCurrentMenuIdx) {
 		return true;
 	}
